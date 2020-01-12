@@ -222,7 +222,7 @@ int main()
 	int* d_triangles;
 	int trianglesSize = 3 * (noVertices - 2) * duplicates;
 	cudaMalloc(&d_triangles, sizeof(int) * trianglesSize);
-	triangulatePolygon << <noBlocks, NO_THREADS, sizeOfSharedMemoryPerBlock >> > (duplicates, d_noVerticesInWallsBfr, d_noWallsInBlocksBfr, d_verticesInWalls, noVertices*noWallsForBlock, d_triangles);
+	triangulatePolygon << <noBlocks, NO_THREADS, sizeOfSharedMemoryPerBlock >> > (d_noVerticesInWallsBfr, d_noWallsInBlocksBfr, d_verticesInWalls, noVertices*noWallsForBlock, d_triangles);
 	int* triangles = (int*)malloc(sizeof(int) * trianglesSize);
 	cudaMemcpy(triangles, d_triangles, sizeof(int) * trianglesSize, cudaMemcpyDeviceToHost);
 	printf("Triangles:\n");

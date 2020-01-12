@@ -85,6 +85,7 @@
   <ItemGroup>
     <ClInclude Include="defines.h" />
     <ClInclude Include="earcut.hpp" />
+    <ClInclude Include="holing.cuh" />
     <ClInclude Include="triangulation.cuh" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

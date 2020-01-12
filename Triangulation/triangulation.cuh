@@ -14,19 +14,19 @@ inline int IsAngleBetweenSmallerThanPi(float3 v1, float3 v2, float3 v3)
 __device__
 inline int IsAnyReflexInsideTriangle(float3 a, float3 b, float3 c, int* nextReflexes, int* typeOfVertices, int reflexRoot, float3* verticesValues)
 {
-	//printf("A1\n");
+	////printf("A1\n");
 	while (reflexRoot != -2)
 	{
-		//printf("B1\n");
+		////printf("B1\n");
 		if (typeOfVertices[reflexRoot] == 0)
 		{
-			//printf("C1\n");
+			////printf("C1\n");
 			float x = verticesValues[reflexRoot].x;
 			float y = verticesValues[reflexRoot].y;
 			float as_x = x - a.x;
 			int as_y = y - a.y;
 			bool s_ab = (b.x - a.x)*as_y - (b.y - a.y)*as_x > 0;
-			//printf("C2\n");
+			////printf("C2\n");
 			if ((c.x - a.x)*as_y - (c.y - a.y)*as_x > 0 != s_ab)
 			{
 				if ((c.x - b.x)*(y - b.y) - (c.y - b.y)*(x - b.x) > 0 == s_ab)
@@ -35,15 +35,15 @@ inline int IsAnyReflexInsideTriangle(float3 a, float3 b, float3 c, int* nextRefl
 				}
 			}
 		}
-		//printf("B2\n");
-		//printf("Step: %d -> %d\n", reflexRoot, nextReflexes[reflexRoot]);
+		////printf("B2\n");
+		////printf("Step: %d -> %d\n", reflexRoot, nextReflexes[reflexRoot]);
 		reflexRoot = nextReflexes[reflexRoot];
 	}
 	return false;
 }
 
 __global__
-void triangulatePolygon(int noWalls,
+void triangulatePolygon(
 	int noVerticesInWallsBfr[],
 	int noWallsInBlocksBfr[],
 	float3 verticesInWalls[],
@@ -52,10 +52,10 @@ void triangulatePolygon(int noWalls,
 {
 	//if (blockIdx.x == 0)
 	//{
-	//	//printf("Wypierdalam\n");
+	//	////printf("Wypierdalam\n");
 	//	return;
 	//}
-	//printf("Starting\n");
+	////printf("Starting\n");
 	//shared memory for all pointer structures needed in earcut algorithm
 	extern __shared__ int earcutTables[];
 	__shared__ int noEarsInBlock;
@@ -102,7 +102,7 @@ void triangulatePolygon(int noWalls,
 		int leftEnd = noVerticesInWallsBfr[index + thisBlockWallsStart] - thisBlockVerticesStart;
 		nextVertices[rightEnd] = leftEnd;
 		prevVertices[leftEnd] = rightEnd;
-		printf("Linking %d with %d\n", leftEnd, rightEnd);
+		//printf("Linking %d with %d\n", leftEnd, rightEnd);
 		//creating vertex to wall table
 		for (int i = leftEnd; i <= rightEnd; i++)
 		{
@@ -120,13 +120,13 @@ void triangulatePolygon(int noWalls,
 	if (threadIdx.x == 0)
 	{
 		noEarsInBlock = 0;
-		printf("thisBlockVerticesStart:%d\n", thisBlockVerticesStart);
-		printf("noVerticesInThisBlock:%d\n", noVerticesInThisBlock);
+		//printf("thisBlockVerticesStart:%d\n", thisBlockVerticesStart);
+		//printf("noVerticesInThisBlock:%d\n", noVerticesInThisBlock);
 
-		//printf("Vertices values\n");
+		////printf("Vertices values\n");
 		//for (int i = 0; i < noVerticesInThisBlock; i++)
 		//{
-		//	printf("%f %f\n", verticesValues[i].x, verticesValues[i].y);
+		//	//printf("%f %f\n", verticesValues[i].x, verticesValues[i].y);
 		//}
 	}
 
@@ -137,12 +137,12 @@ void triangulatePolygon(int noWalls,
 	index = threadIdx.x;
 	while (index < noVerticesInThisBlock)
 	{
-		printf("Checking for reflex in %d, %d, %d\n", prevVertices[index], index, nextVertices[index]);
+		//printf("Checking for reflex in %d, %d, %d\n", prevVertices[index], index, nextVertices[index]);
 		if (!IsAngleBetweenSmallerThanPi(verticesValues[prevVertices[index]], verticesValues[index], verticesValues[nextVertices[index]]))
 		{
 			//adding reflex
 			nextReflexes[index] = atomicExch(&(rootReflexes[vertexToWall[index]]), index);
-			printf("Added reflex %d\n", index);
+			//printf("Added reflex %d\n", index);
 			__syncthreads();
 			typeOfVertices[index] = 0;
 		}
@@ -154,7 +154,7 @@ void triangulatePolygon(int noWalls,
 	index = threadIdx.x;
 	if (threadIdx.x == 0)
 	{
-		printf("Adding ears\n");
+		//printf("Adding ears\n");
 	}
 	while (index < noVerticesInThisBlock)
 	{
@@ -187,7 +187,7 @@ void triangulatePolygon(int noWalls,
 		{
 			ears[earSaveOffset] = foundEar;
 			atomicAdd(&noEarsInBlock,1);	//TODO: Change to prefixSum aggregate
-			printf("Saving ear %d on index %d\n", foundEar, earSaveOffset);
+			//printf("Saving ear %d on index %d\n", foundEar, earSaveOffset);
 		}
 		__syncthreads();
 		index += blockDim.x;
@@ -199,7 +199,7 @@ void triangulatePolygon(int noWalls,
 	{
 		if (threadIdx.x == 0)
 		{
-			printf("Rolling main loop with noEarsInBlock = %d\n", noEarsInBlock);
+			//printf("Rolling main loop with noEarsInBlock = %d\n", noEarsInBlock);
 		}
 		noBufferEarsInBlock = 0;
 		index = threadIdx.x;
@@ -211,17 +211,17 @@ void triangulatePolygon(int noWalls,
 			int ear = ears[2 * index];
 			int globalWall = vertexToWall[ear] + thisBlockWallsStart;
 			int triangleIndex = atomicAdd(&(addedTrianglesInWalls[vertexToWall[ear]]), 3) + 3 * (noVerticesInWallsBfr[globalWall] - 2 * globalWall);
-			printf("Unrolling ear %d\n", ear);
+			//printf("Unrolling ear %d\n", ear);
 			if (triangleIndex < 3 * (noVerticesInWallsBfr[globalWall + 1] - 2 * (globalWall + 1)))
 			{
-				printf("Adding triangle %d,%d,%d in wall %d\n", prevVertices[ear], ear, nextVertices[ear], vertexToWall[ear]);
+				//printf("Adding triangle %d,%d,%d in wall %d\n", prevVertices[ear], ear, nextVertices[ear], vertexToWall[ear]);
 				triangles[triangleIndex] = prevVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 1] = ear + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 2] = nextVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 			}
 			else
 			{
-				printf("Dismissing triangle %d,%d,%d in wall %d\n", prevVertices[ear], ear, nextVertices[ear], vertexToWall[ear]);
+				//printf("Dismissing triangle %d,%d,%d in wall %d\n", prevVertices[ear], ear, nextVertices[ear], vertexToWall[ear]);
 			}
 
 			int next = nextVertices[ear];
@@ -233,7 +233,7 @@ void triangulatePolygon(int noWalls,
 			{
 				if (IsAngleBetweenSmallerThanPi(verticesValues[prevVertices[prev]], verticesValues[prev], verticesValues[nextVertices[prev]]))
 				{
-					printf("Changing reflex %d to non-reflex\n", prev);
+					//printf("Changing reflex %d to non-reflex\n", prev);
 					typeOfVertices[prev] = 1;
 				}
 			}
@@ -241,7 +241,7 @@ void triangulatePolygon(int noWalls,
 			{
 				if (IsAngleBetweenSmallerThanPi(verticesValues[prevVertices[next]], verticesValues[next], verticesValues[nextVertices[next]]))
 				{
-					printf("Changing reflex %d to non-reflex\n", next);
+					//printf("Changing reflex %d to non-reflex\n", next);
 					typeOfVertices[next] = 1;
 				}
 			}
@@ -258,7 +258,7 @@ void triangulatePolygon(int noWalls,
 						verticesValues))
 				{
 					//will add prev to ears
-					printf("Will add %d to ears as prev\n", prev);
+					//printf("Will add %d to ears as prev\n", prev);
 					typeOfVertices[prev] = 2;
 					newEars[noEarsInThread] = prev;
 					noEarsInThread++;
@@ -276,7 +276,7 @@ void triangulatePolygon(int noWalls,
 						verticesValues))
 				{
 					//will add next to ears
-					printf("Will add %d to ears as next\n", next);
+					//printf("Will add %d to ears as next\n", next);
 					typeOfVertices[next] = 2;
 					newEars[noEarsInThread] = next;
 					noEarsInThread++;
@@ -295,17 +295,17 @@ void triangulatePolygon(int noWalls,
 					verticesValues))
 				{
 					newEars[noEarsInThread] = ears[2 * index + 1];
-					printf("Rewriting ear %d to next iteration\n", ears[2 * index + 1]);
+					//printf("Rewriting ear %d to next iteration\n", ears[2 * index + 1]);
 					noEarsInThread++;
 				}
 				else
 				{
-					printf("Ear %d is no longer an ear\n", ears[2 * index + 1]);
+					//printf("Ear %d is no longer an ear\n", ears[2 * index + 1]);
 				}
 			}
 			__syncthreads();
 			//adding all gathered new ears
-			printf("Gathered %d ears\n", noEarsInThread);
+			//printf("Gathered %d ears\n", noEarsInThread);
 			int earsInsertionIndex=0;		
 			typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
 			__shared__ typename BlockScan::TempStorage temp_storage;
@@ -314,7 +314,7 @@ void triangulatePolygon(int noWalls,
 			for (size_t e = 0; e < noEarsInThread; e++)
 			{
 				bufferEars[earsInsertionIndex + e] = newEars[e];
-				printf("thid: %d, Added ear %d on index %d\n", threadIdx.x, newEars[e], earsInsertionIndex + e);
+				//printf("thid: %d, Added ear %d on index %d\n", threadIdx.x, newEars[e], earsInsertionIndex + e);
 			}
 			atomicAdd(&noBufferEarsInBlock, noEarsInThread); //TODO: Change to blockscan aggregate
 			__syncthreads();
@@ -328,6 +328,6 @@ void triangulatePolygon(int noWalls,
 	}	
 	if (threadIdx.x == 0)
 	{
-		printf("The end\n");
+		//printf("The end\n");
 	}
 }
