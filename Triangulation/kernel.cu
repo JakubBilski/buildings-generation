@@ -7,9 +7,11 @@
 #include <iostream>
 
 #include "triangulation.cuh"
+#include "holing.cuh"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include <cuda_runtime.h>
 
 rapidjson::Document readDocumentFromFile(std::string path)
 {
@@ -124,59 +126,12 @@ rapidjson::Document createExample()
 	outputDoc.AddMember("plots", plots, allocator);
 	return outputDoc;
 }
-
-int main()
+int testTraingulation()
 {
-	//// The number type to use for tessellation
-	//using Coord = double;
 
-	//// The index type. Defaults to uint32_t, but you can also pass uint16_t if you know that your
-	//// data won't have more than 65536 vertices.
-	//using N = uint32_t;
-
-	//// Create array
-	//using Point = std::array<Coord, 2>;
-	//std::vector<std::vector<Point>> polygon;
-
-	//rapidjson::Document document = readDocumentFromFile("TriangulationInput.json");
-	//auto outlineJson = document["outline"].GetArray();
-	//std::vector<Point> outline;
-	//double x, y;
-	//std::cout << "Outline\n";
-	//for (size_t i = 0; i < outlineJson.Size(); i++)
-	//{
-	//	x = outlineJson[i]["x"].GetDouble();
-	//	y = outlineJson[i]["y"].GetDouble();
-	//	outline.push_back({ x,y });
-	//	std::cout << x << " " << y << std::endl;
-	//}
-	//auto holeJson = document["hole"].GetArray();
-	//std::vector<Point> hole;
-	//std::cout << "Hole\n";
-	//for (size_t i = 0; i < holeJson.Size(); i++)
-	//{
-	//	x = holeJson[i]["x"].GetDouble();
-	//	y = holeJson[i]["y"].GetDouble();
-	//	hole.push_back({ x,y });
-	//	std::cout << x << " " << y << std::endl;
-	//}
-
-	//polygon.push_back(outline);
-	//polygon.push_back(hole);
-
-	////triangles are ccw
-	//std::vector<N> triangles = mapbox::earcut<N>(polygon);
-	//for (size_t i = 0; i < triangles.size(); i++)
-	//{
-	//	std::cout << triangles[i];
-	//}
-	//std::cout << std::endl;
-	//outline.insert(outline.end(), hole.begin(), hole.end());
-
-	
 	const int duplicates = 200;
 	const int noVertices = 6;
-	int noVerticesInWallsBfr[duplicates+1];
+	int noVerticesInWallsBfr[duplicates + 1];
 	for (size_t i = 0; i < duplicates + 1; i++)
 	{
 		noVerticesInWallsBfr[i] = i * noVertices;
@@ -200,7 +155,7 @@ int main()
 	cudaMemcpy(d_noWallsInBlocksBfr, noWallsInBlocksBfr, sizeof(int)*(noBlocks + 1), cudaMemcpyHostToDevice);
 
 	float3 verticesInWalls[duplicates * noVertices];
-	for (size_t i = 0; i < duplicates * noVertices; i+=noVertices)
+	for (size_t i = 0; i < duplicates * noVertices; i += noVertices)
 	{
 		verticesInWalls[i].x = 0;
 		verticesInWalls[i].y = 3;
@@ -226,7 +181,7 @@ int main()
 	int* triangles = (int*)malloc(sizeof(int) * trianglesSize);
 	cudaMemcpy(triangles, d_triangles, sizeof(int) * trianglesSize, cudaMemcpyDeviceToHost);
 	printf("Triangles:\n");
-	for (size_t i = 0; i < trianglesSize; i+=3)
+	for (size_t i = 0; i < trianglesSize; i += 3)
 	{
 		printf("%d %d %d\n", triangles[i], triangles[i + 1], triangles[i + 2]);
 	}
@@ -234,5 +189,48 @@ int main()
 	//writeDocumentToFile(example, "TriangulationOutput.json");
 
 
+	return 0;
+}
+int testHoling()
+{
+	int noWalls = 1;
+	int noVerticesInContoursBfr[2]{ 0, 4 };
+	int noHolesInWallsBfr[2]{ 0, 1 };
+	int noVerticesInHolesBfr[2]{ 0,4 };
+	float3 verticesInContours[4]
+	{
+		{0,1,0},
+		{2,0,0},
+		{4,3,0},
+		{2,4,0}
+	};
+	float3 verticesInHoles[4]
+	{
+		{2,1,0},
+		{1,2,0},
+		{2,3,0},
+		{3,2,0}
+	};
+	float3 out_holesAndContours[10];
+	mergeHolesAndContoursCPU(
+		noWalls,
+		noVerticesInContoursBfr,
+		noHolesInWallsBfr,
+		noVerticesInHolesBfr,
+		verticesInContours,
+		verticesInHoles,
+		out_holesAndContours
+	);
+	for (int i = 0; i < 10; i++)
+	{
+		printf("%f %f\n", out_holesAndContours[i].x, out_holesAndContours[i].y);
+	}
+	return 0;
+}
+
+
+int main()
+{
+	testHoling();
 	return 0;
 }

@@ -3,65 +3,142 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <cuda_runtime.h>
+#include <algorithm>
+#include <list>
 
-
-__device__
-inline float Dist(float3 a, float3 b)
+bool isPointInsideTriangle(float3 s, float3 a, float3 b, float3 c)
 {
-	return sqrtf((a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y));
+	int as_x = s.x - a.x;
+	int as_y = s.y - a.y;
+
+	bool s_ab = (b.x - a.x)*as_y - (b.y - a.y)*as_x > 0;
+
+	if ((c.x - a.x)*as_y - (c.y - a.y)*as_x > 0 == s_ab) return false;
+
+	if ((c.x - b.x)*(s.y - b.y) - (c.y - b.y)*(s.x - b.x) > 0 != s_ab) return false;
+
+	return true;
 }
 
-__global__
-void mergeHolesAndContours(
-	int noWallsInBlocksBfr[],
+void mergeHolesAndContoursCPU(
+	int noWalls,
 	int noVerticesInContoursBfr[],
 	int noHolesInWallsBfr[],
 	int noVerticesInHolesBfr[],
 	float3 verticesInContours[],
 	float3 verticesInHoles[],
-	int memForTable,
-	int out_holesAndContours[])
+	float3 out_holesAndContours[])
 {
-	int thisBlockFirstWall = noWallsInBlocksBfr[blockIdx.x];
-	int thisBlockNoWalls = noWallsInBlocksBfr[blockIdx.x + 1] - thisBlockFirstWall;
-	int thisBlockFirstContourVertex = noVerticesInContoursBfr[thisBlockFirstWall];
-	int thisBlockNoContourVertices = noVerticesInContoursBfr[noWallsInBlocksBfr[blockIdx.x + 1]] - thisBlockFirstContourVertex;
-	int thisBlockFirstHole = noHolesInWallsBfr[thisBlockFirstWall];
-	int thisBlockNoHoles = noHolesInWallsBfr[thisBlockFirstWall + thisBlockNoWalls] - thisBlockFirstHole;
-	int thisBlockFirstHoleVertex = noVerticesInHolesBfr[thisBlockFirstHole];
-	int thisBlockNoHoleVertices = noVerticesInHolesBfr[thisBlockFirstHole + thisBlockNoHoles] - thisBlockFirstHoleVertex;
+	for (int wall = 0; wall < noWalls; wall++)
+	{
+		int noContourVertices = noVerticesInContoursBfr[wall + 1] - noVerticesInContoursBfr[wall];
+		int noHoles = noHolesInWallsBfr[wall + 1] - noHolesInWallsBfr[wall];
+		int noHolesVertices = noVerticesInHolesBfr[noHolesInWallsBfr[wall + 1]] - noVerticesInHolesBfr[noHolesInWallsBfr[wall]];
 
-	extern __shared__ int tables[];
-	float3* contourValues = (float3*)tables;
-	int* contourSaveIndexes = tables + (sizeof(float3) / sizeof(int)) * thisBlockNoContourVertices;
-	int* holesSaveIndexes = contourSaveIndexes + thisBlockNoContourVertices;
-	int* holesVerticesClosestContourVertex = holesSaveIndexes + thisBlockNoHoleVertices;
-	float* holesVerticesClosestContourVertexDistance = (float*)holesVerticesClosestContourVertex + thisBlockNoHoleVertices;
-	int* holeVerticesInWallsBfr = (int*)holesVerticesClosestContourVertexDistance + (sizeof(float) / sizeof(int)) * thisBlockNoHoleVertices;
-	int* contourVerticesInWallsBfr = holeVerticesInWallsBfr + thisBlockNoWalls;
-
-	int index = threadIdx.x;
-	if (index < thisBlockNoContourVertices)
-	{
-		contourValues[index] = verticesInContours[thisBlockFirstContourVertex + index];
-		contourSaveIndexes[index] = 1;
-		index += blockDim.x;
-	}
-	index = threadIdx.x;
-	if (index < thisBlockNoWalls)
-	{
-		holeVerticesInWallsBfr[index] = noVerticesInHolesBfr[noHolesInWallsBfr[index + 1 + thisBlockFirstWall]] - noVerticesInHolesBfr[noHolesInWallsBfr[index + thisBlockFirstWall]];
-		contourVerticesInWallsBfr[index] = noVerticesInContoursBfr[index + 1 + thisBlockFirstWall] - noVerticesInContoursBfr[index + thisBlockFirstWall];
-	}
-	for (int wall = 0; wall < thisBlockNoWalls; wall++)
-	{
-		int thisWallFirstHole = noHolesInWallsBfr[wall + thisBlockFirstWall];
-		int thisWallNoHoles = noHolesInWallsBfr[wall + 1 + thisBlockFirstWall] - noHolesInWallsBfr[wall + thisBlockFirstWall];
-		for (int hole = 0; hole < thisWallNoHoles; hole++)
+		std::list<float3> outList;
+		for (int i = 0; i < noContourVertices; i++)
 		{
+			outList.push_back(verticesInContours[i + noVerticesInContoursBfr[wall]]);
+		}
 
+		int* holes = (int*)malloc(sizeof(int) * noHoles);
+		int* maxXVertices = (int*)malloc(sizeof(int) * noHoles);
+		int* maxXValues = (int*)malloc(sizeof(int) * noHoles);
+		for (int hole = 0; hole < noHoles; hole++)
+		{
+			holes[hole] = hole;
+			maxXVertices[hole] = 0;
+			int firstVertexInHole = noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall]];
+			int noVerticesInHole = noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall] + 1] - firstVertexInHole;
+			for (int vertex = 1; vertex < noVerticesInHole; vertex++)
+			{
+				if (maxXValues[hole] < verticesInHoles[vertex + firstVertexInHole].x)
+				{
+					maxXVertices[hole] = vertex;
+					maxXValues[hole] = verticesInHoles[vertex + firstVertexInHole].x;
+				}
+			}
+		}
+		auto sortRuleLambda = [maxXValues](int a, int b) {return maxXValues[a] - maxXValues[b]; };
+		std::sort(holes, holes + noHoles, sortRuleLambda);
+		for (int holesIndex = 0; holesIndex < noHoles; holesIndex++)
+		{
+			int hole = holes[holesIndex];
+			float3 maxXVertex = verticesInHoles[maxXVertices[hole] + noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall]]];
+			std::list<float3>::iterator visiblePointCandidate;
+			float3 closestIntersectionPoint;
+			closestIntersectionPoint.x = 10000000;
+			auto p1 = outList.begin();
+			auto p2 = outList.begin();
+			p2++;
+			while (p2 != outList.end())
+			{
+				if ((p1->y >= maxXVertex.y && p2->y <= maxXVertex.y) || (p1->y <= maxXVertex.y && p2->y >= maxXVertex.y))
+				{
+					float3 intersectionPoint;
+					intersectionPoint.y = maxXVertex.y;
+					intersectionPoint.x = ((p2->y - maxXVertex.y)*(p1->x - p2->x)) / (p1->y - p2->y) + p2->x;
+					if (intersectionPoint.x > maxXVertex.x && intersectionPoint.x < closestIntersectionPoint.x)
+					{
+						closestIntersectionPoint.x = intersectionPoint.x;
+						closestIntersectionPoint.y = intersectionPoint.y;
+						visiblePointCandidate = (p1->x > p2->x) ? p1 : p2;
+					}
+				}
+				p1++;
+				p2++;
+			}
+			p2 = outList.begin();
+			{
+				if ((p1->y > maxXVertex.y && p2->y < maxXVertex.y) || (p1->y < maxXVertex.y && p2->y > maxXVertex.y))
+				{
+					float3 intersectionPoint;
+					intersectionPoint.y = maxXVertex.y;
+					intersectionPoint.x = ((p2->y - maxXVertex.y)*(p1->x - p2->x)) / (p1->y - p2->y) + p2->x;
+					if (intersectionPoint.x > maxXVertex.x && intersectionPoint.x < closestIntersectionPoint.x)
+					{
+						closestIntersectionPoint.x = intersectionPoint.x;
+						closestIntersectionPoint.y = intersectionPoint.y;
+						visiblePointCandidate = (p1->x > p2->x) ? p1 : p2;
+					}
+				}
+			}
+			float cosSmallestAngle = 0;
+			std::list<float3>::iterator smallestAnglePointInsideTriangle = visiblePointCandidate;
+			auto v = outList.begin();
+			while(v != outList.end())
+			{
+				if (v->x == closestIntersectionPoint.x && v->y == closestIntersectionPoint.y)
+				{
+					smallestAnglePointInsideTriangle = v;
+					break;
+				}
+				if (isPointInsideTriangle(*v, maxXVertex, closestIntersectionPoint, *visiblePointCandidate))
+				{
+					float cosv = (v->x - maxXVertex.x) / (sqrt((v->x - maxXVertex.x)*(v->x - maxXVertex.x) + (v->y - maxXVertex.y)*(v->y - maxXVertex.y)));
+					if (cosv > cosSmallestAngle)
+					{
+						smallestAnglePointInsideTriangle = v;
+						cosSmallestAngle = cosv;
+					}
+				}
+				v++;
+			}
+			float3* holeBegin = &verticesInHoles[noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall]]];
+			float3* holeEnd = &verticesInHoles[noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall] + 1]];
+			float3* holeJointVertex = &(verticesInHoles[maxXVertices[hole] + noVerticesInHolesBfr[hole + noHolesInWallsBfr[wall]]]);
+			//duplicating vertex in contour
+			outList.insert(smallestAnglePointInsideTriangle, *smallestAnglePointInsideTriangle);
+			//adding hole vertices from joint to end of the hole
+			outList.insert(smallestAnglePointInsideTriangle, holeJointVertex, holeEnd);
+			//adding hole vertices from the beginning of the hole to joint, including the joint once again to duplicate it
+			outList.insert(smallestAnglePointInsideTriangle, holeBegin, holeJointVertex + 1);
+		}
+		int outIndex = noVerticesInContoursBfr[wall] + noVerticesInHolesBfr[noHolesInWallsBfr[wall]] + noHolesInWallsBfr[wall] * 2;
+		for (float3 v : outList)
+		{
+			out_holesAndContours[outIndex] = v;
+			outIndex++;
 		}
 	}
-
-
 }
