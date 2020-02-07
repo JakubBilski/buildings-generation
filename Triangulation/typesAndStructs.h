@@ -4,13 +4,15 @@
 
 enum BuildingType
 {
-	COTTAGE_B
+	COTTAGE_B,
+	AMAZING_B
 };
 
 enum WallType
 {
 	BLUE_W,
-	RED_W
+	RED_W,
+	AMAZING_W
 };
 
 struct modelInfo

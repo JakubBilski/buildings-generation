@@ -8,6 +8,77 @@
 
 
 __global__
+void generateAmazingWallsGPU(int noWalls, int noModelsInWallsBfr[], int noVerticesInContoursBfr[], int noVerticesInHolesBfr[], int noHolesInWallsBfr[],
+	int out_frontMaterials[], int out_backMaterials[], int out_innerMaterials[], int out_outerMaterials[],
+	float out_frontMaterialGrains[], float out_backMaterialGrains[], float out_innerMaterialGrains[], float out_outerMaterialGrains[],
+	float2 out_verticesInContours[], float2 out_verticesInHoles[], float3 vectorXs[], float3 vectorYs[]
+	)
+{
+	int wall = threadIdx.x;
+	if (wall < noWalls)
+	{
+		//TODO: scan no models, add models etc. 
+		noModelsInWallsBfr[wall] = 0;
+
+		int noContourVertices = 5;
+		int noHoles = 0;
+		int noHolesVertices = 0;
+		float wallLength = sqrt(vectorXs[wall].x *  vectorXs[wall].x + vectorXs[wall].z *  vectorXs[wall].z);
+		float wallHeight = vectorYs[wall].y;
+		const int windowLength = 2.0f;
+		const int windowHeight = 3.0f;
+
+		if (wall == 0)
+		{
+			noContourVertices += noVerticesInContoursBfr[0];
+			noHoles += noHolesInWallsBfr[0];
+			noHolesVertices += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
+		}
+		__syncthreads();
+		int noContourVerticesBfr;
+		int noHolesBfr;
+		int noHolesVerticesBfr;
+		typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
+
+		__shared__ typename BlockScan::TempStorage temp_storage1;
+		BlockScan(temp_storage1).ExclusiveSum(noContourVertices, noContourVerticesBfr);
+		noVerticesInContoursBfr[wall + 1] = noContourVerticesBfr + noContourVertices;
+		__syncthreads();
+
+		__shared__ typename BlockScan::TempStorage temp_storage2;
+		BlockScan(temp_storage2).ExclusiveSum(noHoles, noHolesBfr);
+		noHolesInWallsBfr[wall + 1] = noHolesBfr + noHoles;
+		__syncthreads();
+
+		__shared__ typename BlockScan::TempStorage temp_storage3;
+		BlockScan(temp_storage3).ExclusiveSum(noHolesVertices, noHolesVerticesBfr);
+		if(noHoles > 0)
+			noVerticesInHolesBfr[noHolesBfr + noHoles] = noHolesVerticesBfr + noHolesVertices;
+		__syncthreads();
+		if (wall == 0)
+		{
+			noContourVerticesBfr += noVerticesInContoursBfr[0];
+			noHolesBfr += noHolesInWallsBfr[0];
+			noHolesVerticesBfr += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
+		}
+
+		out_frontMaterialGrains[wall] = 0.5f;
+		out_backMaterialGrains[wall] = 0.5f;
+		out_innerMaterialGrains[wall] = 0.5f;
+		out_outerMaterialGrains[wall] = 0.5f;
+		out_frontMaterials[wall] = 0;
+		out_backMaterials[wall] = 2;
+		out_innerMaterials[wall] = 2;
+		out_outerMaterials[wall] = 2;
+		out_verticesInContours[noContourVerticesBfr] = { 0,0 };
+		out_verticesInContours[noContourVerticesBfr + 4] = { 0,1 };
+		out_verticesInContours[noContourVerticesBfr + 3] = { 0.5,1.5 };
+		out_verticesInContours[noContourVerticesBfr + 2] = { 1,1 };
+		out_verticesInContours[noContourVerticesBfr + 1] = { 1,0 };
+		__syncthreads();
+	}
+}
+__global__
 void generateBlueWallsGPU(int noWalls, int noModelsInWallsBfr[], int noVerticesInContoursBfr[], int noVerticesInHolesBfr[], int noHolesInWallsBfr[],
 	int out_frontMaterials[], int out_backMaterials[], int out_innerMaterials[], int out_outerMaterials[],
 	float out_frontMaterialGrains[], float out_backMaterialGrains[], float out_innerMaterialGrains[], float out_outerMaterialGrains[],
@@ -264,6 +335,15 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 					d_verticesInContours, d_verticesInHoles, d_vectorXs + firstWallIndex, d_vectorYs + firstWallIndex);
 				cudaDeviceSynchronize();
 			}
+			else if (info.types[firstWallIndex] == WallType::AMAZING_W)
+			{
+				generateAmazingWallsGPU << <1, NO_THREADS >> > (NO_THREADS, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
+					d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
+					d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
+					d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
+					d_verticesInContours, d_verticesInHoles, d_vectorXs + firstWallIndex, d_vectorYs + firstWallIndex);
+				cudaDeviceSynchronize();
+			}
 
 			noWallsThisType -= NO_THREADS;
 			firstWallIndex += NO_THREADS;
@@ -279,6 +359,14 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 		else if (info.types[firstWallIndex] == WallType::RED_W)
 		{
 			generateRedWallsGPU << <1, NO_THREADS >> > (noWallsThisType, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
+				d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
+				d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
+				d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
+				d_verticesInContours, d_verticesInHoles, d_vectorXs + firstWallIndex, d_vectorYs + firstWallIndex);
+		}
+		else if (info.types[firstWallIndex] == WallType::AMAZING_W)
+		{
+			generateAmazingWallsGPU << <1, NO_THREADS >> > (noWallsThisType, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
 				d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
 				d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
 				d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,

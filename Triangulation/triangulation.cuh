@@ -120,7 +120,7 @@ void triangulatePolygonGPU(
 		{
 			//adding reflex
 			nextReflexes[index] = atomicExch(&(rootReflexes[vertexToWall[index]]), index);
-			__syncthreads();
+			//__syncthreads();
 			typeOfVertices[index] = 0;
 		}
 		index += blockDim.x;
@@ -164,7 +164,7 @@ void triangulatePolygonGPU(
 	if (foundEar != -1)
 	{
 		ears[earSaveOffset] = foundEar;
-		atomicAdd(&noEarsInBlock, 1);	//TODO: Change to prefixSum aggregate
+		atomicAdd((int*)&noEarsInBlock, 1);	//TODO: Change to prefixSum aggregate
 	}
 	__syncthreads();
 	//main loop
@@ -185,6 +185,7 @@ void triangulatePolygonGPU(
 				triangles[triangleIndex] = prevVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 1] = ear + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 2] = nextVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
+				//printf("[%d] saving triangle %d %d %d in %d\n", threadIdx.x + blockDim.x * blockIdx.x, triangles[triangleIndex], triangles[triangleIndex + 1], triangles[triangleIndex + 2], triangleIndex/3);
 			}
 
 			int next = nextVertices[ear];
@@ -274,7 +275,10 @@ void triangulatePolygonGPU(
 		int* swapBuffer = bufferEars;
 		bufferEars = ears;
 		ears = swapBuffer;
-		noEarsInBlock = noBufferEarsInBlock;
+		if (threadIdx.x == 0)
+		{
+			noEarsInBlock = noBufferEarsInBlock;
+		}
 		__syncthreads();
 	}
 }

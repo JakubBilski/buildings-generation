@@ -5,7 +5,66 @@
 #include <string>
 #include "cub/block/block_scan.cuh"
 
+__global__
+void generateAmazingGPU(int noBuildings, int noModelsInBuildingsBfr[], int noWallsInBuildingsBfr[], int noPlotCornersInBuildingsBfr[], float3 plotCorners[],
+	modelInfo out_models[], float3 out_wallPositions[], float3 out_wallVectorXs[], float3 out_wallVectorYs[], float3 out_wallVectorWidths[], WallType out_wallTypes[])
+{
+	const float cottageHeight = 4;
+	const float cottageWidth = 0.4f;
+	int building = threadIdx.x;
+	if (building < noBuildings)
+	{
+		noModelsInBuildingsBfr[building] = 0;
 
+		int plotCornersBegin = noPlotCornersInBuildingsBfr[building];
+		int plotCornersEnd = noPlotCornersInBuildingsBfr[building + 1];
+		int noWalls = plotCornersEnd - plotCornersBegin;
+		int noWallsBfr;
+		if (building == 0)
+		{
+			noWalls += noWallsInBuildingsBfr[0];
+		}
+		typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
+		__shared__ typename BlockScan::TempStorage temp_storage;
+		BlockScan(temp_storage).ExclusiveSum(noWalls, noWallsBfr);
+		if (building == 0)
+		{
+			noWallsBfr += noWallsInBuildingsBfr[0];
+			noWalls -= noWallsInBuildingsBfr[0];
+		}
+		noWallsInBuildingsBfr[building + 1] = noWalls + noWallsBfr;
+		__syncthreads();
+		for (int i = 0; i < noWalls; i++)
+		{
+			float3 corner = plotCorners[i + plotCornersBegin];
+			float3 nextCorner;
+			if (i == noWalls - 1)
+			{
+				nextCorner = plotCorners[plotCornersBegin];
+			}
+			else
+			{
+				nextCorner = plotCorners[plotCornersBegin + i + 1];
+			}
+			out_wallPositions[i + noWallsBfr] = { corner.x, corner.y, corner.z };
+			if (i % 2 == 0)
+			{
+				out_wallTypes[i + noWallsBfr] = WallType::AMAZING_W;
+			}
+			else
+			{
+				out_wallTypes[i + noWallsBfr] = WallType::BLUE_W;
+			}
+			out_wallVectorXs[i + noWallsBfr] = { nextCorner.x - corner.x,  0, nextCorner.z - corner.z };
+			out_wallVectorYs[i + noWallsBfr] = { 0,cottageHeight,0 };
+			float dx = nextCorner.z - corner.z;
+			float dz = corner.x - nextCorner.x;
+			float denominator = sqrt(dx*dx + dz * dz);
+			out_wallVectorWidths[i + noWallsBfr] = { dx*cottageWidth / denominator,0, dz*cottageWidth / denominator };
+		}
+		__syncthreads();
+	}
+}
 
 __global__
 void generateCottagesGPU(int noBuildings, int noModelsInBuildingsBfr[], int noWallsInBuildingsBfr[], int noPlotCornersInBuildingsBfr[], float3 plotCorners[],
@@ -180,10 +239,24 @@ void generateBuildings(int noBuildings, buildingsInfo& info, int noTypes, Buildi
 				firstBuildingIndex += NO_THREADS;
 				noBuildingsThisType -= NO_THREADS;
 			}
+			else if (types[typeIndex] == AMAZING_B)
+			{
+				generateAmazingGPU << <1, NO_THREADS >> > (NO_THREADS, d_noModelsInBuildingsBfr + firstBuildingIndex, d_noWallsInBuildingsBfr + firstBuildingIndex,
+					d_noPlotCornersInBuildingsBfr + firstBuildingIndex, d_plotCorners,
+					d_models, d_wallPositions, d_wallVectorXs, d_wallVectorYs, d_wallVectorWidths, d_wallTypes);
+				firstBuildingIndex += NO_THREADS;
+				noBuildingsThisType -= NO_THREADS;
+			}
 		}
 		if (types[typeIndex] == COTTAGE_B)
 		{
 			generateCottagesGPU << <1, NO_THREADS >> > (noBuildingsThisType, d_noModelsInBuildingsBfr + firstBuildingIndex, d_noWallsInBuildingsBfr + firstBuildingIndex,
+				d_noPlotCornersInBuildingsBfr + firstBuildingIndex, d_plotCorners,
+				d_models, d_wallPositions, d_wallVectorXs, d_wallVectorYs, d_wallVectorWidths, d_wallTypes);
+		}
+		else if (types[typeIndex] == AMAZING_B)
+		{
+			generateAmazingGPU << <1, NO_THREADS >> > (noBuildingsThisType, d_noModelsInBuildingsBfr + firstBuildingIndex, d_noWallsInBuildingsBfr + firstBuildingIndex,
 				d_noPlotCornersInBuildingsBfr + firstBuildingIndex, d_plotCorners,
 				d_models, d_wallPositions, d_wallVectorXs, d_wallVectorYs, d_wallVectorWidths, d_wallTypes);
 		}
@@ -216,5 +289,7 @@ void generateBuildings(int noBuildings, buildingsInfo& info, int noTypes, Buildi
 	cudaFree(d_wallVectorWidths);
 	cudaFree(d_wallTypes);
 	cudaFree(d_wallBuildings);
+	cudaFree(d_noPlotCornersInBuildingsBfr);
+	cudaFree(d_plotCorners);
 }
 

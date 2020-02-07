@@ -18,7 +18,8 @@
 int main()
 {
 	//input
-	const int noBuildings = 100;
+	const int noBuildings = 4000;
+	printf("%d\n", noBuildings);
 	buildingsInfo info;
 	info.positions = (float3*)malloc(sizeof(float3)*noBuildings);
 	for (int i = 0; i < noBuildings; i++)
@@ -26,7 +27,7 @@ int main()
 		info.positions[i] = { (float)((i % 20) * 20), 0, (float)((i / 20) * 20) };
 	}
 	const int noTypes = 1;
-	BuildingType types[noTypes]{ BuildingType::COTTAGE_B };
+	BuildingType types[noTypes]{ BuildingType::AMAZING_B };
 	int noBuildingsInTypesBfr[noTypes+1]{ 0,noBuildings };
 	int noPlotCornersInBuildingsBfr[noBuildings+1];
 	noPlotCornersInBuildingsBfr[0] = 0;
@@ -52,8 +53,6 @@ int main()
 		plotCorners[noPlotCorners * i + 4] = { 0,0,5 };
 	}
 	//end of input
-
-
 
 	int* noModelsInBuildingsBfr;
 	int* noWallsInBuildingsBfr;
@@ -169,6 +168,7 @@ int main()
 		info.positions,
 		frontMaterials, backMaterials, innerMaterials, outerMaterials, &materialsInfo
 	};
+
 	rapidjson::Document outputDoc;
 	assembleFinalJson(assembleJsonArgs, outputDoc);
 	writeDocumentToFile(outputDoc, "TriangulationOutput.json");

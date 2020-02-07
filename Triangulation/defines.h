@@ -1,4 +1,5 @@
 #pragma once
 #define BLOCK_SIZE
+//#define DEBUG
 #define NO_THREADS 256
 #define NO_VERTICES_FOR_BLOCK_TRIANGULATION 240
