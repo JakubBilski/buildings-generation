@@ -18,47 +18,46 @@
 int main()
 {
 	//input
-	const int noBuildings = 4000;
+	const int noBuildings = 3000;
 	printf("%d\n", noBuildings);
-	buildingsInfo info;
-	info.positions = (float3*)malloc(sizeof(float3)*noBuildings);
+	float3* buildingPositions = (float3*)malloc(sizeof(float3)*noBuildings);
 	for (int i = 0; i < noBuildings; i++)
 	{
-		info.positions[i] = { (float)((i % 20) * 20), 0, (float)((i / 20) * 20) };
+		buildingPositions[i] = { (float)((i % 20) * 20), 0, (float)((i / 20) * 20) };
 	}
 	const int noTypes = 1;
-	BuildingType types[noTypes]{ BuildingType::AMAZING_B };
+	BuildingLogicType types[noTypes]{ BuildingLogicType::AMAZING_B };
 	int noBuildingsInTypesBfr[noTypes+1]{ 0,noBuildings };
 	int noPlotCornersInBuildingsBfr[noBuildings+1];
 	noPlotCornersInBuildingsBfr[0] = 0;
-	const int noPlotCorners = 5;
+	const int noPlotCorners = 4;
 	for (int i = 1; i < noBuildings+1; i++)
 	{
 		noPlotCornersInBuildingsBfr[i] = noPlotCornersInBuildingsBfr[i - 1] + noPlotCorners;
 	}
-	float3 plotCorners[noBuildings * noPlotCorners];
-	//for (int i = 0; i < noBuildings; i++)
-	//{
-	//	plotCorners[noPlotCorners * i] = { 0,0,0 };
-	//	plotCorners[noPlotCorners * i + 1] = { 10,0,0 };
-	//	plotCorners[noPlotCorners * i + 2] = { 10,0,10 };
-	//	plotCorners[noPlotCorners * i + 3] = { 0,0,10 };
-	//}
+	float2 plotCorners[noBuildings * noPlotCorners];
 	for (int i = 0; i < noBuildings; i++)
 	{
-		plotCorners[noPlotCorners * i] = { 0,0,0 };
-		plotCorners[noPlotCorners * i + 1] = { 5,0,0 };
-		plotCorners[noPlotCorners * i + 2] = { 10,0,5 };
-		plotCorners[noPlotCorners * i + 3] = { 5,0,10 };
-		plotCorners[noPlotCorners * i + 4] = { 0,0,5 };
+		plotCorners[noPlotCorners * i] = { 0,0 };
+		plotCorners[noPlotCorners * i + 1] = { 10,0 };
+		plotCorners[noPlotCorners * i + 2] = { 10,10 };
+		plotCorners[noPlotCorners * i + 3] = { 0,10 };
 	}
+	//for (int i = 0; i < noBuildings; i++)
+	//{
+	//	plotCorners[noPlotCorners * i] = { 0,0 };
+	//	plotCorners[noPlotCorners * i + 1] = { 5,0 };
+	//	plotCorners[noPlotCorners * i + 2] = { 10,5 };
+	//	plotCorners[noPlotCorners * i + 3] = { 5,10 };
+	//	plotCorners[noPlotCorners * i + 4] = { 0,5 };
+	//}
 	//end of input
 
 	int* noModelsInBuildingsBfr;
 	int* noWallsInBuildingsBfr;
 	modelInfo* models;
 	wallsInfo walls;
-	generateBuildings(noBuildings, info, noTypes, types, noBuildingsInTypesBfr, noPlotCornersInBuildingsBfr, plotCorners,
+	generateBuildings(noBuildings, noTypes, types, noBuildingsInTypesBfr, noPlotCornersInBuildingsBfr, plotCorners,
 		&noModelsInBuildingsBfr, &noWallsInBuildingsBfr, &models, &walls);
 
 	int noWalls = noWallsInBuildingsBfr[noBuildings];
@@ -72,24 +71,21 @@ int main()
 	std::sort(sortedWallsIndexes, sortedWallsIndexes + noWalls, sortRuleLambda);
 	wallsInfo bufferInfo;
 	bufferInfo.positions = (float3*)malloc(sizeof(float3)*noWalls);
-	bufferInfo.vectorXs = (float3*)malloc(sizeof(float3)*noWalls);
-	bufferInfo.vectorYs = (float3*)malloc(sizeof(float3)*noWalls);
-	bufferInfo.vectorWidths = (float3*)malloc(sizeof(float3)*noWalls);
+	bufferInfo.rotations = (float3*)malloc(sizeof(float3)*noWalls);
+	bufferInfo.dimensions = (float3*)malloc(sizeof(float3)*noWalls);
 	bufferInfo.types = (WallType*)malloc(sizeof(WallType)*noWalls);
 	bufferInfo.buildingIndexes = (int*)malloc(sizeof(int)*noWalls);
 	for (int i = 0; i < noWalls; i++)
 	{
 		bufferInfo.positions[i] = walls.positions[sortedWallsIndexes[i]];
-		bufferInfo.vectorXs[i] = walls.vectorXs[sortedWallsIndexes[i]];
-		bufferInfo.vectorYs[i] = walls.vectorYs[sortedWallsIndexes[i]];
-		bufferInfo.vectorWidths[i] = walls.vectorWidths[sortedWallsIndexes[i]];
+		bufferInfo.rotations[i] = walls.rotations[sortedWallsIndexes[i]];
+		bufferInfo.dimensions[i] = walls.dimensions[sortedWallsIndexes[i]];
 		bufferInfo.types[i] = walls.types[sortedWallsIndexes[i]];
 		bufferInfo.buildingIndexes[i] = walls.buildingIndexes[sortedWallsIndexes[i]];
 	}
 	free(walls.positions);
-	free(walls.vectorXs);
-	free(walls.vectorYs);
-	free(walls.vectorWidths);
+	free(walls.rotations);
+	free(walls.dimensions);
 	free(walls.types);
 	free(walls.buildingIndexes);
 	walls = bufferInfo;
@@ -137,36 +133,21 @@ int main()
 		&verticesInContours, &verticesInHoles
 	);
 
-	//TODO: replace following with gpu operations
-
-	float3* normalsOfWalls = (float3*)malloc(sizeof(float3)*noWalls);
-	for (int i = 0; i < noWalls; i++)
-	{
-		float x = - walls.vectorWidths[i].x;
-		float y = - walls.vectorWidths[i].y;
-		float z = - walls.vectorWidths[i].z;
-		float delimiter = sqrt(x*x + y * y + z * z);
-		normalsOfWalls[i] = { x / delimiter, y / delimiter, z / delimiter };
-	}
-	std::map<int, std::string> materialsInfo;
-	materialsInfo.insert(std::pair<int, std::string>(0, "plaster_blue_damaged"));
-	materialsInfo.insert(std::pair<int, std::string>(1, "plaster_red_damaged"));
-	materialsInfo.insert(std::pair<int, std::string>(2, "stone"));
 	generateWallsArgs generateWallsArgs{ noWalls,
 		frontMaterialGrains, backMaterialGrains, innerMaterialGrains, outerMaterialGrains,
-		walls.vectorWidths, walls.vectorXs, walls.vectorYs, walls.positions,
+		walls.positions, walls.rotations, walls.dimensions,
 		noVerticesInContoursBfr, noHolesInWallsBfr, noVerticesInHolesBfr,
 		verticesInContours, verticesInHoles };
 	generateWallsResult generateWallsResult = meshWalls(generateWallsArgs);
 
 	assembleFinalJsonArgs assembleJsonArgs{
 		noBuildings, noWalls, walls.buildingIndexes, noHolesInWallsBfr, generateWallsResult.noVerticesInWallsBfr, noVerticesInHolesBfr, noVerticesInContoursBfr,
-		generateWallsResult.triangles, normalsOfWalls, walls.vectorWidths, walls.positions, generateWallsResult.worldSpaceVerticesValues,
-		generateWallsResult.worldSpaceHolesVerticesNormalsValues,  generateWallsResult.worldSpaceHolesVerticesValues,
-		generateWallsResult.worldSpaceContoursVerticesValues, generateWallsResult.worldSpaceContourNormalsValues,
+		generateWallsResult.triangles, walls.positions, walls.rotations, walls.dimensions, generateWallsResult.allVerticesValues,
+		generateWallsResult.holesVerticesNormalsValues,  verticesInHoles,
+		verticesInContours, generateWallsResult.contourNormalsValues,
 		generateWallsResult.frontUvs, generateWallsResult.backUvs, generateWallsResult.innerUvs, generateWallsResult.outerUvs,
-		info.positions,
-		frontMaterials, backMaterials, innerMaterials, outerMaterials, &materialsInfo
+		buildingPositions,
+		frontMaterials, backMaterials, innerMaterials, outerMaterials
 	};
 
 	rapidjson::Document outputDoc;

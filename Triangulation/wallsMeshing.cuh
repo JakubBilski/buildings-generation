@@ -5,7 +5,6 @@
 #include "triangulation.cuh"
 #include "uvsFinding.cuh"
 #include "normalsFinding.cuh"
-#include "spaceTransforming.cuh"
 
 struct generateWallsArgs
 {
@@ -15,10 +14,9 @@ struct generateWallsArgs
 	float* innerMaterialGrains;
 	float* outerMaterialGrains;
 
-	float3* vectorWidthOfWalls;
-	float3* xVectorsOfWalls;
-	float3* yVectorsOfWalls;
-	float3* shiftOfWalls;
+	float3* wallPositions;
+	float3* wallRotations;
+	float3* wallDimensions;
 	int* noVerticesInContoursBfr;
 	int* noHolesInWallsBfr;
 	int* noVerticesInHolesBfr;
@@ -30,11 +28,9 @@ struct generateWallsResult
 {
 	int* noVerticesInWallsBfr;
 	int* triangles;
-	float3* worldSpaceVerticesValues;
-	float3* worldSpaceHolesVerticesValues;
-	float3* worldSpaceHolesVerticesNormalsValues;
-	float3* worldSpaceContoursVerticesValues;
-	float3* worldSpaceContourNormalsValues;
+	float2* allVerticesValues;
+	float2* holesVerticesNormalsValues;
+	float2* contourNormalsValues;
 	float2* frontUvs;
 	float2* backUvs;
 	float2* innerUvs;
@@ -90,70 +86,24 @@ void step_findUvs(int noWalls, int noVertices, int d_noVerticesInWallsBfr[], flo
 	int noBlocks = (noWalls - 1) / NO_THREADS + 1;
 	findUvsGPU << <noBlocks, NO_THREADS >> > (noWalls, d_noVerticesInWallsBfr, d_verticesValues, d_grains, d_uvs);
 	cudaMemcpy(*out_uvs, d_uvs, sizeof(float2)*noVertices, cudaMemcpyDeviceToHost);
+	cudaDeviceSynchronize();
 	cudaFree(d_uvs);
 }
 
-void step_findNormalsInside(int noHoles, int noVerticesInHoles, int d_noVerticesInHolesBfr[], float2 d_verticesInHoles[],
-	float2* out_d_normalsInside[])
+void step_findNormals(int noHoles, int noVerticesInHoles, int d_noVerticesInHolesBfr[], float2 d_verticesInHoles[],
+	float2* out_normalsInside[])
 {
-	cudaMalloc(out_d_normalsInside, sizeof(float2) * noVerticesInHoles);
-	findInsideNormalsGPU << <1, NO_THREADS >> > (noHoles, noVerticesInHoles, d_noVerticesInHolesBfr, d_verticesInHoles, *out_d_normalsInside);
-}
-
-void step_findNormalsOutside(int noWalls, int noVerticesInContours, int d_noVerticesInWallsBfr[], float2 d_verticesInContours[],
-	float2* out_d_normalsOutside[])
-{
-	cudaMalloc(out_d_normalsOutside, sizeof(float2) * noVerticesInContours);
-	findOutsideNormalsGPU << <1, NO_THREADS >> > (noWalls, noVerticesInContours, d_noVerticesInWallsBfr, d_verticesInContours, *out_d_normalsOutside);
-}
-
-void step_transformVerticesToWorldSpace(bool normalize, int noWalls, int noVertices, int d_noVerticesInWallsBfr[],
-	float3 d_xVectorsOfWalls[], float3 d_yVectorsOfWalls[], float2 d_verticesValues[],
-	float3* out_output[])
-{
-	*out_output = (float3*)malloc(sizeof(float3)*noVertices);
-	float3* d_output;
-	cudaMalloc(&d_output, sizeof(float3)*noVertices);
-	int noBlocks = (noWalls - 1) / NO_THREADS + 1;
-	transformVerticesToWorldSpaceGPU << <noBlocks, NO_THREADS >> > (noWalls, d_noVerticesInWallsBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_verticesValues, d_output);
-	if (normalize)
-	{
-		noBlocks = (noVertices - 1) / NO_THREADS + 1;
-		normalizeGPU << <noBlocks, NO_THREADS >> > (noVertices, d_output);
-	}
-	cudaMemcpy(*out_output, d_output, sizeof(float3)*noVertices, cudaMemcpyDeviceToHost);
-	cudaFree(d_output);
-}
-
-void step_transformHolesVerticesToWorldSpace(bool normalize, int noWalls, int noVertices, int d_noHolesInWallsBfr[], int d_noVerticesInHolesBfr[],
-	float3 d_xVectorsOfWalls[], float3 d_yVectorsOfWalls[], float2 d_holesVerticesValues[],
-	float3* out_output[])
-{
-	*out_output = (float3*)malloc(sizeof(float3)*noVertices);
-	float3* d_output;
-	cudaMalloc(&d_output, sizeof(float3)*noVertices);
-	int noBlocks = (noWalls - 1) / NO_THREADS + 1;
-	transformHolesVerticesToWorldSpaceGPU << <noBlocks, NO_THREADS >> > (noWalls, d_noHolesInWallsBfr, d_noVerticesInHolesBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_holesVerticesValues, d_output);
+	*out_normalsInside = (float2*)malloc(sizeof(float2) * noVerticesInHoles);
+	float2* d_normalsInside;
+	cudaMalloc(&d_normalsInside, sizeof(float2) * noVerticesInHoles);
+	findInsideNormalsGPU << <1, NO_THREADS >> > (noHoles, noVerticesInHoles, d_noVerticesInHolesBfr, d_verticesInHoles, d_normalsInside);
+	cudaMemcpy(*out_normalsInside, d_normalsInside, sizeof(float2) * noVerticesInHoles, cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
-	if (normalize)
-	{
-		noBlocks = (noVertices - 1) / NO_THREADS + 1;
-		normalizeGPU << <noBlocks, NO_THREADS >> > (noVertices, d_output);
-	}
-	cudaMemcpy(*out_output, d_output, sizeof(float3)*noVertices, cudaMemcpyDeviceToHost);
-	cudaFree(d_output);
+	cudaFree(d_normalsInside);
 }
 
 generateWallsResult meshWalls(generateWallsArgs args)
 {
-	float3* d_xVectorsOfWalls;
-	float3* d_yVectorsOfWalls;
-	cudaMalloc(&d_xVectorsOfWalls, sizeof(float3)*args.noWalls);
-	cudaMalloc(&d_yVectorsOfWalls, sizeof(float3)*args.noWalls);
-
-	cudaMemcpy(d_xVectorsOfWalls, args.xVectorsOfWalls, sizeof(float3)*args.noWalls, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_yVectorsOfWalls, args.yVectorsOfWalls, sizeof(float3)*args.noWalls, cudaMemcpyHostToDevice);
-
 	float2* verticesValues;
 	int* noVerticesInWallsBfr;
 	int* noWallsInBlocksBfr;
@@ -182,13 +132,27 @@ generateWallsResult meshWalls(generateWallsArgs args)
 	cudaMalloc(&d_backMaterialGrains, sizeof(float)*args.noWalls);
 	cudaMemcpy(d_frontMaterialGrains, args.frontMaterialGrains, sizeof(float)*args.noWalls, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_backMaterialGrains, args.backMaterialGrains, sizeof(float)*args.noWalls, cudaMemcpyHostToDevice);
+#ifdef DEBUG
+	printf("Front grains:\n");
+	for (int i = 0; i < args.noWalls; i++)
+	{
+		printf("%f ", args.frontMaterialGrains[i]);
+	}
+	printf("\n");
+#endif
 
 	step_findUvs(args.noWalls, noAllVertices, d_noVerticesInWallsBfr, d_verticesInWalls, d_frontMaterialGrains, &frontUvs);
 	step_findUvs(args.noWalls, noAllVertices, d_noVerticesInWallsBfr, d_verticesInWalls, d_backMaterialGrains, &backUvs);
 
 	cudaFree(d_frontMaterialGrains);
 	cudaFree(d_backMaterialGrains);
-
+#ifdef DEBUG
+	printf("Front uvs:\n");
+	for (int i = 0; i < noAllVertices; i++)
+	{
+		printf("%f %f\n", frontUvs[i].x, frontUvs[i].y);
+	}
+#endif
 
 #ifdef DEBUG
 	printf("Information before triangulation:\n");
@@ -216,16 +180,12 @@ generateWallsResult meshWalls(generateWallsArgs args)
 	}
 #endif
 
-	float3* worldSpaceVerticesValues;
-	step_transformVerticesToWorldSpace(false, args.noWalls, noAllVertices, d_noVerticesInWallsBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_verticesInWalls, &worldSpaceVerticesValues);
 	cudaFree(d_noVerticesInWallsBfr);
 	cudaFree(d_verticesInWalls);
-
 
 	int noHoles = args.noHolesInWallsBfr[args.noWalls];
 	int noVerticesInHoles = args.noVerticesInHolesBfr[noHoles];
 	int noVerticesInContours = args.noVerticesInContoursBfr[args.noWalls];
-
 
 	float2* innerUvs = (float2*)malloc(sizeof(float2)*noVerticesInHoles);
 	float2* outerUvs = (float2*)malloc(sizeof(float2)*noVerticesInContours);
@@ -237,63 +197,42 @@ generateWallsResult meshWalls(generateWallsArgs args)
 	{
 		outerUvs[i] = { 0,0 };
 	}
-
-
-	float3* worldSpaceHolesVerticesValues;
-	float3* worldSpaceContoursVerticesValues;
-	float3* worldSpaceNormalsValues;
-	float3* worldSpaceContourNormalsValues;
-
-
 	cudaDeviceSynchronize();
 
 	int* d_noVerticesInContoursBfr;
-	float2* d_normalsOutside;
+	float2* normalsOutside;
 	float2* d_verticesInContours;
 	cudaMalloc(&d_verticesInContours, sizeof(float2)*noVerticesInContours);
 	cudaMemcpy(d_verticesInContours, args.verticesInContours, sizeof(float2)*noVerticesInContours, cudaMemcpyHostToDevice);
 	cudaMalloc(&d_noVerticesInContoursBfr, sizeof(float2)*args.noWalls);
 	cudaMemcpy(d_noVerticesInContoursBfr, args.noVerticesInContoursBfr, sizeof(float2)*args.noWalls, cudaMemcpyHostToDevice);
-	step_findNormalsInside(args.noWalls, noVerticesInContours, d_noVerticesInContoursBfr, d_verticesInContours, &d_normalsOutside);
-	step_transformVerticesToWorldSpace(false, args.noWalls, noVerticesInContours, d_noVerticesInContoursBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_verticesInContours, &worldSpaceContoursVerticesValues);
-	step_transformVerticesToWorldSpace(true, args.noWalls, noVerticesInContours, d_noVerticesInContoursBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_normalsOutside, &worldSpaceContourNormalsValues);
+	//TODO: change findNormalsInside to findNormals, as inner and outer normals are the only ones we have to find
+	step_findNormals(args.noWalls, noVerticesInContours, d_noVerticesInContoursBfr, d_verticesInContours, &normalsOutside);
 	cudaFree(d_verticesInContours);
-	cudaFree(d_normalsOutside);
 	cudaFree(d_noVerticesInContoursBfr);
 
 	cudaDeviceSynchronize();
 
-	int* d_noHolesInWallsBfr;
 	int* d_noVerticesInHolesBfr;
-	float2* d_normalsInside;
+	float2* normalsInside;
 	float2* d_verticesInHoles;
 	cudaMalloc(&d_noVerticesInHolesBfr, sizeof(float2)*noHoles);
 	cudaMemcpy(d_noVerticesInHolesBfr, args.noVerticesInHolesBfr, sizeof(float2)*noHoles, cudaMemcpyHostToDevice);
 	cudaMalloc(&d_verticesInHoles, sizeof(float2)*noVerticesInHoles);
 	cudaMemcpy(d_verticesInHoles, args.verticesInHoles, sizeof(float2)*noVerticesInHoles, cudaMemcpyHostToDevice);
-	cudaMalloc(&d_noHolesInWallsBfr, sizeof(float2)*args.noWalls);
-	cudaMemcpy(d_noHolesInWallsBfr, args.noHolesInWallsBfr, sizeof(float2)*args.noWalls, cudaMemcpyHostToDevice);
-	step_findNormalsInside(noHoles, noVerticesInHoles, d_noVerticesInHolesBfr, d_verticesInHoles, &d_normalsInside);
-	step_transformHolesVerticesToWorldSpace(false, args.noWalls, noVerticesInHoles, d_noHolesInWallsBfr, d_noVerticesInHolesBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_verticesInHoles, &worldSpaceHolesVerticesValues);
-	step_transformHolesVerticesToWorldSpace(true, args.noWalls, noVerticesInHoles, d_noHolesInWallsBfr, d_noVerticesInHolesBfr, d_xVectorsOfWalls, d_yVectorsOfWalls, d_normalsInside, &worldSpaceNormalsValues);
+	step_findNormals(noHoles, noVerticesInHoles, d_noVerticesInHolesBfr, d_verticesInHoles, &normalsInside);
 	cudaFree(d_verticesInHoles);
-	cudaFree(d_normalsInside);
 	cudaFree(d_noVerticesInHolesBfr);
-	cudaFree(d_noHolesInWallsBfr);
 
 	generateWallsResult result;
 	result.noVerticesInWallsBfr = noVerticesInWallsBfr;
 	result.triangles = triangles;
-	result.worldSpaceVerticesValues = worldSpaceVerticesValues;
-	result.worldSpaceHolesVerticesValues = worldSpaceHolesVerticesValues;
-	result.worldSpaceHolesVerticesNormalsValues = worldSpaceNormalsValues;
-	result.worldSpaceContoursVerticesValues = worldSpaceContoursVerticesValues;
-	result.worldSpaceContourNormalsValues = worldSpaceContourNormalsValues;
+	result.allVerticesValues = verticesValues;
+	result.holesVerticesNormalsValues = normalsInside;
+	result.contourNormalsValues = normalsOutside;
 	result.frontUvs = frontUvs;
 	result.backUvs = backUvs;
 	result.innerUvs = innerUvs;
 	result.outerUvs = outerUvs;
-	cudaFree(d_xVectorsOfWalls);
-	cudaFree(d_yVectorsOfWalls);
 	return result;
 }

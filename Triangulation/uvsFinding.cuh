@@ -18,10 +18,10 @@ void findUvsGPU(
 	int wall = threadIdx.x + blockIdx.x*blockDim.x;
 	if (wall < noWalls)
 	{
-		for (int i = noVerticesInWallsBfr[wall]; i < noVerticesInWallsBfr[wall+1]; i++)
+		for (int vertex = noVerticesInWallsBfr[wall]; vertex < noVerticesInWallsBfr[wall+1]; vertex++)
 		{
-			out_uvs[i] = { verticesValues[i].x - grains[wall] * (int)(verticesValues[i].x / grains[wall]),
-				verticesValues[i].y - grains[wall] * (int)(verticesValues[i].y / grains[wall]) };
+			out_uvs[vertex] = { verticesValues[vertex].x * grains[wall],
+				verticesValues[vertex].y * grains[wall] };
 		}
 	}
 }

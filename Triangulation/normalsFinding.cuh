@@ -14,6 +14,7 @@ void findInsideNormalsGPU(
 	float2 verticesInHoles[],
 	float2 out_normalsInside[])
 {
+	//TODO: this is probably wrong
 	int index = threadIdx.x;
 	while (index < noVerticesInHoles-1)
 	{

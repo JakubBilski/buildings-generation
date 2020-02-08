@@ -88,7 +88,6 @@
     <ClInclude Include="holing.cuh" />
     <ClInclude Include="jsonOperations.h" />
     <ClInclude Include="normalsFinding.cuh" />
-    <ClInclude Include="spaceTransforming.cuh" />
     <ClInclude Include="triangulation.cuh" />
     <ClInclude Include="typesAndStructs.h" />
     <ClInclude Include="uvsFinding.cuh" />

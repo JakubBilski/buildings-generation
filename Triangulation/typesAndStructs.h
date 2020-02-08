@@ -2,7 +2,7 @@
 #include <cuda_runtime.h>
 #include <string>
 
-enum BuildingType
+enum BuildingLogicType
 {
 	COTTAGE_B,
 	AMAZING_B
@@ -11,7 +11,6 @@ enum BuildingType
 enum WallType
 {
 	BLUE_W,
-	RED_W,
 	AMAZING_W
 };
 
@@ -19,7 +18,7 @@ struct modelInfo
 {
 	float3 position;
 	float3 rotation;
-	std::string name;
+	int id;
 };
 
 struct buildingsInfo
@@ -31,8 +30,7 @@ struct wallsInfo
 {
 	WallType* types;
 	float3* positions;
-	float3* vectorXs;
-	float3* vectorYs;
-	float3* vectorWidths;
+	float3* rotations;
+	float3* dimensions;
 	int* buildingIndexes;
 };
