@@ -2,170 +2,44 @@
 #include <cuda_runtime.h>
 #include "defines.h"
 #include "typesAndStructs.h"
-#include <string>
-#include "cub/block/block_scan.cuh"
+#include "walls.cuh"
 
 
 
-__global__
-void generateAmazingWallsGPU(int noWalls, int noModelsInWallsBfr[], int noVerticesInContoursBfr[], int noVerticesInHolesBfr[], int noHolesInWallsBfr[],
-	int out_frontMaterials[], int out_backMaterials[], int out_innerMaterials[], int out_outerMaterials[],
-	float out_frontMaterialGrains[], float out_backMaterialGrains[], float out_innerMaterialGrains[], float out_outerMaterialGrains[],
-	float2 out_verticesInContours[], float2 out_verticesInHoles[], float3 dimensions[]
-	)
-{
-	int wall = threadIdx.x;
-	if (wall < noWalls)
-	{
-		//TODO: scan no models, add models etc. 
-		noModelsInWallsBfr[wall] = 0;
-
-		int noContourVertices = 5;
-		int noHoles = 0;
-		int noHolesVertices = 0;
-		float wallLength = dimensions[wall].x;
-		float wallHeight = dimensions[wall].y;
-		const int windowLength = 2.0f;
-		const int windowHeight = 3.0f;
-
-		if (wall == 0)
-		{
-			noContourVertices += noVerticesInContoursBfr[0];
-			noHoles += noHolesInWallsBfr[0];
-			noHolesVertices += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
-		}
-		__syncthreads();
-		int noContourVerticesBfr;
-		int noHolesBfr;
-		int noHolesVerticesBfr;
-		typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
-
-		__shared__ typename BlockScan::TempStorage temp_storage1;
-		BlockScan(temp_storage1).ExclusiveSum(noContourVertices, noContourVerticesBfr);
-		noVerticesInContoursBfr[wall + 1] = noContourVerticesBfr + noContourVertices;
-		__syncthreads();
-
-		__shared__ typename BlockScan::TempStorage temp_storage2;
-		BlockScan(temp_storage2).ExclusiveSum(noHoles, noHolesBfr);
-		noHolesInWallsBfr[wall + 1] = noHolesBfr + noHoles;
-		__syncthreads();
-
-		__shared__ typename BlockScan::TempStorage temp_storage3;
-		BlockScan(temp_storage3).ExclusiveSum(noHolesVertices, noHolesVerticesBfr);
-		if(noHoles > 0)
-			noVerticesInHolesBfr[noHolesBfr + noHoles] = noHolesVerticesBfr + noHolesVertices;
-		__syncthreads();
-		if (wall == 0)
-		{
-			noContourVerticesBfr += noVerticesInContoursBfr[0];
-			noHolesBfr += noHolesInWallsBfr[0];
-			noHolesVerticesBfr += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
-		}
-		out_frontMaterialGrains[wall] = 0.5f;
-		out_backMaterialGrains[wall] = 0.5f;
-		out_innerMaterialGrains[wall] = 0.5f;
-		out_outerMaterialGrains[wall] = 0.5f;
-		out_frontMaterials[wall] = 0;
-		out_backMaterials[wall] = 2;
-		out_innerMaterials[wall] = 2;
-		out_outerMaterials[wall] = 2;
-		out_verticesInContours[noContourVerticesBfr] = { 0,0 };
-		out_verticesInContours[noContourVerticesBfr + 4] = { 0, wallHeight };
-		out_verticesInContours[noContourVerticesBfr + 3] = { 0.5f * wallLength,1.5f*wallHeight };
-		out_verticesInContours[noContourVerticesBfr + 2] = { wallLength,wallHeight };
-		out_verticesInContours[noContourVerticesBfr + 1] = { wallLength,0 };
-		__syncthreads();
-	}
-}
-__global__
-void generateBlueWallsGPU(int noWalls, int noModelsInWallsBfr[], int noVerticesInContoursBfr[], int noVerticesInHolesBfr[], int noHolesInWallsBfr[],
-	int out_frontMaterials[], int out_backMaterials[], int out_innerMaterials[], int out_outerMaterials[],
-	float out_frontMaterialGrains[], float out_backMaterialGrains[], float out_innerMaterialGrains[], float out_outerMaterialGrains[],
-	float2 out_verticesInContours[], float2 out_verticesInHoles[], float3 dimensions[]
-	)
-{
-	int wall = threadIdx.x;
-	if (wall < noWalls)
-	{
-		//TODO: scan no models, add models etc. 
-		noModelsInWallsBfr[wall] = 0;
-
-		int noContourVertices = 4;
-		int noHoles = 0;
-		int noHolesVertices = 0;
-		float wallLength = dimensions[wall].x;
-		float wallHeight = dimensions[wall].y;
-		const int windowLength = 2.0f;
-		const int windowHeight = 3.0f;
-
-		if (wallLength > windowLength*1.1f && wallHeight > windowHeight*1.1f);
-		{
-			noHoles = 1;
-			noHolesVertices = 4;
-		}
-		if (wall == 0)
-		{
-			noContourVertices += noVerticesInContoursBfr[0];
-			noHoles += noHolesInWallsBfr[0];
-			noHolesVertices += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
-		}
-		__syncthreads();
-		int noContourVerticesBfr;
-		int noHolesBfr;
-		int noHolesVerticesBfr;
-		typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
-
-		__shared__ typename BlockScan::TempStorage temp_storage1;
-		BlockScan(temp_storage1).ExclusiveSum(noContourVertices, noContourVerticesBfr);
-		noVerticesInContoursBfr[wall + 1] = noContourVerticesBfr + noContourVertices;
-		__syncthreads();
-
-		__shared__ typename BlockScan::TempStorage temp_storage2;
-		BlockScan(temp_storage2).ExclusiveSum(noHoles, noHolesBfr);
-		noHolesInWallsBfr[wall + 1] = noHolesBfr + noHoles;
-		__syncthreads();
-
-		__shared__ typename BlockScan::TempStorage temp_storage3;
-		BlockScan(temp_storage3).ExclusiveSum(noHolesVertices, noHolesVerticesBfr);
-		if(noHoles > 0)
-			noVerticesInHolesBfr[noHolesBfr + noHoles] = noHolesVerticesBfr + noHolesVertices;
-		__syncthreads();
-		if (wall == 0)
-		{
-			noContourVerticesBfr += noVerticesInContoursBfr[0];
-			noHolesBfr += noHolesInWallsBfr[0];
-			noHolesVerticesBfr += noVerticesInHolesBfr[noHolesInWallsBfr[0]];
-		}
-
-		out_frontMaterialGrains[wall] = 0.5f;
-		out_backMaterialGrains[wall] = 0.5f;
-		out_innerMaterialGrains[wall] = 0.5f;
-		out_outerMaterialGrains[wall] = 0.5f;
-		out_frontMaterials[wall] = 0;
-		out_backMaterials[wall] = 2;
-		out_innerMaterials[wall] = 2;
-		out_outerMaterials[wall] = 2;
-		out_verticesInContours[noContourVerticesBfr] = { 0,0 };
-		out_verticesInContours[noContourVerticesBfr + 3] = { 0,wallHeight };
-		out_verticesInContours[noContourVerticesBfr + 2] = { wallLength,wallHeight };
-		out_verticesInContours[noContourVerticesBfr + 1] = { wallLength,0 };
-
-		if (noHoles > 0)
-		{
-			out_verticesInHoles[noHolesVerticesBfr] = { 0.3f*wallLength, 0.2f*wallHeight };
-			out_verticesInHoles[noHolesVerticesBfr + 1] = { 0.3f*wallLength, 0.8f*wallHeight };
-			out_verticesInHoles[noHolesVerticesBfr + 2] = { 0.7f*wallLength, 0.8f*wallHeight };
-			out_verticesInHoles[noHolesVerticesBfr + 3] = { 0.7f*wallLength, 0.2f*wallHeight };
-		}
-		__syncthreads();
-	}
-}
-
-void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesBfr[],
-	int* out_noModelsInWallsBfr[], int* out_noVerticesInContoursBfr[],int* out_noVerticesInHolesBfr[], int* out_noHolesInWallsBfr[],
-	int* out_frontMaterials[], int* out_backMaterials[], int* out_innerMaterials[], int* out_outerMaterials[],
-	float* out_frontMaterialGrains[],float* out_backMaterialGrains[],float* out_innerMaterialGrains[],float* out_outerMaterialGrains[],
-	float2* out_verticesInContours[], float2* out_verticesInHoles[])
+void generateWalls(int noWalls, 
+	wallsInfo info,
+	int noTypes,
+	int noModels,
+	int noPunchers,
+	int noWallsInTypesBfr[],
+	int noArgumentsInWallsBfr[],
+	int noAssetsInWallsBfr[],
+	int noCollidersInModelsBfr[],
+	int modelsOfPunchers[],
+	int noVerticesInPunchersBfr[],
+	int cultures[],
+	int arguments[],
+	int assetsInWalls[],
+	float3 colliderVertices[],
+	float2 puncherVertices[],
+	int* out_noModelsInWallsBfr[], 
+	int* out_noVerticesInContoursBfr[],
+	int* out_noVerticesInHolesBfr[],
+	int* out_noHolesInWallsBfr[],
+	int* out_frontMaterials[],
+	int* out_backMaterials[],
+	int* out_innerMaterials[],
+	int* out_outerMaterials[],
+	float* out_frontMaterialGrains[],
+	float* out_backMaterialGrains[],
+	float* out_innerMaterialGrains[],
+	float* out_outerMaterialGrains[],
+	float2* out_verticesInContours[],
+	float2* out_verticesInHoles[],
+	float3* out_modelPositions[],
+	float3* out_modelRotations[],
+	int* out_modelIds[]
+)
 {
 	*out_frontMaterials = (int*)malloc(sizeof(int) * noWalls);
 	*out_backMaterials = (int*)malloc(sizeof(int) * noWalls);
@@ -179,9 +53,11 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 	*out_noModelsInWallsBfr = (int*)malloc(sizeof(int)*(noWalls + 1));
 	*out_noVerticesInContoursBfr = (int*)malloc(sizeof(int)*(noWalls + 1));
 	*out_noHolesInWallsBfr = (int*)malloc(sizeof(int)*(noWalls + 1));
-	int maxHoles = noWalls * 3;
-	int maxContourVertices = 6 * noWalls;
+
+	int maxHoles = noWalls * 40;
+	int maxContourVertices = 4 * noWalls;
 	int maxHolesVertices = maxHoles * 6;
+	int maxModels = 40 * noWalls;
 
 	int* d_noModelsInWallsBfr;
 	int* d_noVerticesInContoursBfr;
@@ -197,80 +73,152 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 	float* d_outerMaterialGrains;
 	float2* d_verticesInContours;
 	float2* d_verticesInHoles;
+	float3* d_modelPositions;
+	float3* d_modelRotations;
+	int* d_modelIds;
 
-	cudaMalloc(&d_noModelsInWallsBfr, sizeof(int) * (noWalls + 1));
+	gpuErrchk(cudaMalloc(&d_noModelsInWallsBfr, sizeof(int) * (noWalls + 1)));
 	cudaMemset(d_noModelsInWallsBfr, 0, sizeof(int) * (noWalls + 1));
-	cudaMalloc(&d_noVerticesInContoursBfr, sizeof(int) * (noWalls + 1));
+	gpuErrchk(cudaMalloc(&d_noVerticesInContoursBfr, sizeof(int) * (noWalls + 1)));
 	cudaMemset(d_noVerticesInContoursBfr, 0, sizeof(int) * (noWalls + 1));
-	cudaMalloc(&d_noHolesInWallsBfr, sizeof(int) * (noWalls + 1));
+	gpuErrchk(cudaMalloc(&d_noHolesInWallsBfr, sizeof(int) * (noWalls + 1)));
 	cudaMemset(d_noHolesInWallsBfr, 0, sizeof(int) * (noWalls + 1));
-	cudaMalloc(&d_noVerticesInHolesBfr, sizeof(int) * (maxHoles + 1));
+	gpuErrchk(cudaMalloc(&d_noVerticesInHolesBfr, sizeof(int) * (maxHoles + 1)));
 	cudaMemset(d_noVerticesInHolesBfr, 0, sizeof(int) * (maxHoles + 1));
-	cudaMalloc(&d_frontMaterials, sizeof(int) * (noWalls));
-	cudaMalloc(&d_backMaterials, sizeof(int) * (noWalls));
-	cudaMalloc(&d_innerMaterials, sizeof(int) * (noWalls));
-	cudaMalloc(&d_outerMaterials, sizeof(int) * (noWalls));
-	cudaMalloc(&d_frontMaterialGrains, sizeof(float) * (noWalls));
-	cudaMalloc(&d_backMaterialGrains, sizeof(float) * (noWalls));
-	cudaMalloc(&d_innerMaterialGrains, sizeof(float) * (noWalls));
-	cudaMalloc(&d_outerMaterialGrains, sizeof(float) * (noWalls));
-	cudaMalloc(&d_verticesInContours, sizeof(float2) * (maxContourVertices));
-	cudaMalloc(&d_verticesInHoles, sizeof(float2) * (maxHolesVertices));
+	gpuErrchk(cudaMalloc(&d_frontMaterials, sizeof(int) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_backMaterials, sizeof(int) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_innerMaterials, sizeof(int) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_outerMaterials, sizeof(int) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_frontMaterialGrains, sizeof(float) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_backMaterialGrains, sizeof(float) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_innerMaterialGrains, sizeof(float) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_outerMaterialGrains, sizeof(float) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_verticesInContours, sizeof(float2) * (maxContourVertices)));
+	gpuErrchk(cudaMalloc(&d_verticesInHoles, sizeof(float2) * (maxHolesVertices)));
+	gpuErrchk(cudaMalloc(&d_modelPositions, sizeof(float3) * (maxModels)));
+	gpuErrchk(cudaMalloc(&d_modelRotations, sizeof(float3) * (maxModels)));
+	gpuErrchk(cudaMalloc(&d_modelIds, sizeof(int) * (maxModels)));
 
+	int* d_noArgumentsInWallsBfr;
+	int* d_noAssetsInWallsBfr;
+	int* d_noCollidersInModelsBfr;
 	float3* d_dimensions;
+	int* d_modelsOfPunchers;
+	int* d_noVerticesInPunchersBfr;
+	int* d_cultures;
+	int* d_arguments;
+	int* d_assetsInWalls;
+	float3* d_colliderVertices;
+	float2* d_puncherVertices;
 
-	cudaMalloc(&d_dimensions, sizeof(float3) * (noWalls));
+	int noArguments = noArgumentsInWallsBfr[noWalls];
+	int noAssetsInWalls = noAssetsInWallsBfr[noWalls];
+	int noColliders = noCollidersInModelsBfr[noModels + 1];
+	int noPuncherVertices = noVerticesInPunchersBfr[noPunchers+1];
 
+	gpuErrchk(cudaMalloc(&d_noArgumentsInWallsBfr, sizeof(int) * (noWalls + 1)));
+	gpuErrchk(cudaMalloc(&d_noAssetsInWallsBfr, sizeof(int) * (noWalls + 1)));
+	gpuErrchk(cudaMalloc(&d_noCollidersInModelsBfr, sizeof(int) * (noModels + 2)));
+	gpuErrchk(cudaMalloc(&d_dimensions, sizeof(float3) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_modelsOfPunchers, sizeof(int) * (noPunchers+1)));
+	gpuErrchk(cudaMalloc(&d_noVerticesInPunchersBfr, sizeof(int) * (noPunchers + 2)));
+	gpuErrchk(cudaMalloc(&d_cultures, sizeof(int) * (noWalls)));
+	gpuErrchk(cudaMalloc(&d_arguments, sizeof(int) * (noArguments)));
+	gpuErrchk(cudaMalloc(&d_assetsInWalls, sizeof(int) * (noAssetsInWalls)));
+	gpuErrchk(cudaMalloc(&d_colliderVertices, sizeof(float3) * (noColliders * 8)));
+	gpuErrchk(cudaMalloc(&d_puncherVertices, sizeof(float2) * (noPuncherVertices)));
+
+	cudaMemcpy(d_noArgumentsInWallsBfr, noArgumentsInWallsBfr, sizeof(int) * (noWalls + 1), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_noAssetsInWallsBfr, noAssetsInWallsBfr, sizeof(int) * (noWalls + 1), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_noCollidersInModelsBfr, noCollidersInModelsBfr, sizeof(int) * (noModels + 2), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_dimensions, info.dimensions, sizeof(float3) * noWalls, cudaMemcpyHostToDevice);
-
+	cudaMemcpy(d_modelsOfPunchers, modelsOfPunchers, sizeof(int) * (noPunchers+1), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_noVerticesInPunchersBfr, noVerticesInPunchersBfr, sizeof(int) * (noPunchers + 2), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_cultures, cultures, sizeof(int) * noWalls, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_arguments, arguments, sizeof(int) * noArguments, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_assetsInWalls, assetsInWalls, sizeof(int) * noAssetsInWalls, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_colliderVertices, colliderVertices, sizeof(float3) * (noColliders * 8), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_puncherVertices, puncherVertices, sizeof(float2) * noPuncherVertices, cudaMemcpyHostToDevice);
 	for (int typeIndex = 0; typeIndex < noTypes; typeIndex++)
 	{
 		int firstWallIndex = noWallsInTypesBfr[typeIndex];
 		int noWallsThisType = noWallsInTypesBfr[typeIndex + 1] - firstWallIndex;
 		while (noWallsThisType > NO_THREADS)
 		{
-			if (info.types[firstWallIndex] == WallType::BLUE_W)
+			if (info.types[firstWallIndex] == 0)
 			{
-				generateBlueWallsGPU << <1, NO_THREADS >> > (NO_THREADS, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
-					d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
-					d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
-					d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
-					d_verticesInContours, d_verticesInHoles, d_dimensions + firstWallIndex);
+				generateTenementWallsGPU << <1, NO_THREADS >> > (NO_THREADS, 
+					d_noModelsInWallsBfr + firstWallIndex,
+					d_noVerticesInContoursBfr + firstWallIndex,
+					d_noVerticesInHolesBfr,
+					d_noHolesInWallsBfr + firstWallIndex,
+					d_noArgumentsInWallsBfr + firstWallIndex,
+					d_noAssetsInWallsBfr + firstWallIndex,
+					d_noCollidersInModelsBfr,
+					d_modelsOfPunchers,
+					d_noVerticesInPunchersBfr,
+					d_cultures,
+					d_dimensions + firstWallIndex,
+					d_arguments,
+					d_assetsInWalls,
+					d_colliderVertices,
+					d_puncherVertices,
+					d_frontMaterials + firstWallIndex,
+					d_backMaterials + firstWallIndex, 
+					d_innerMaterials + firstWallIndex,
+					d_outerMaterials + firstWallIndex,
+					d_frontMaterialGrains + firstWallIndex, 
+					d_backMaterialGrains + firstWallIndex,
+					d_innerMaterialGrains + firstWallIndex,
+					d_outerMaterialGrains + firstWallIndex,
+					d_verticesInContours,
+					d_verticesInHoles,
+					d_modelPositions,
+					d_modelRotations,
+					d_modelIds);
 				cudaDeviceSynchronize();
 			}
-			else if (info.types[firstWallIndex] == WallType::AMAZING_W)
-			{
-				generateAmazingWallsGPU << <1, NO_THREADS >> > (NO_THREADS, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
-					d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
-					d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
-					d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
-					d_verticesInContours, d_verticesInHoles, d_dimensions + firstWallIndex);
-				cudaDeviceSynchronize();
-			}
-
 			noWallsThisType -= NO_THREADS;
 			firstWallIndex += NO_THREADS;
 		}
-		if (info.types[firstWallIndex] == WallType::BLUE_W)
+		if (info.types[firstWallIndex] == 0)
 		{
-			generateBlueWallsGPU << <1, NO_THREADS >> > (noWallsThisType, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
-				d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
-				d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
-				d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
-				d_verticesInContours, d_verticesInHoles, d_dimensions + firstWallIndex);
-		}
-		else if (info.types[firstWallIndex] == WallType::AMAZING_W)
-		{
-			generateAmazingWallsGPU << <1, NO_THREADS >> > (noWallsThisType, d_noModelsInWallsBfr + firstWallIndex, d_noVerticesInContoursBfr + firstWallIndex,
-				d_noVerticesInHolesBfr, d_noHolesInWallsBfr + firstWallIndex,
-				d_frontMaterials + firstWallIndex, d_backMaterials + firstWallIndex, d_innerMaterials + firstWallIndex, d_outerMaterials + firstWallIndex,
-				d_frontMaterialGrains + firstWallIndex, d_backMaterialGrains + firstWallIndex, d_innerMaterialGrains + firstWallIndex, d_outerMaterialGrains + firstWallIndex,
-				d_verticesInContours, d_verticesInHoles, d_dimensions + firstWallIndex);
+			generateTenementWallsGPU << <1, NO_THREADS >> > (noWallsThisType,
+				d_noModelsInWallsBfr + firstWallIndex,
+				d_noVerticesInContoursBfr + firstWallIndex,
+				d_noVerticesInHolesBfr,
+				d_noHolesInWallsBfr + firstWallIndex,
+				d_noArgumentsInWallsBfr + firstWallIndex,
+				d_noAssetsInWallsBfr + firstWallIndex,
+				d_noCollidersInModelsBfr,
+				d_modelsOfPunchers,
+				d_noVerticesInPunchersBfr,
+				d_cultures,
+				d_dimensions + firstWallIndex,
+				d_arguments,
+				d_assetsInWalls,
+				d_colliderVertices,
+				d_puncherVertices,
+				d_frontMaterials + firstWallIndex,
+				d_backMaterials + firstWallIndex,
+				d_innerMaterials + firstWallIndex,
+				d_outerMaterials + firstWallIndex,
+				d_frontMaterialGrains + firstWallIndex,
+				d_backMaterialGrains + firstWallIndex,
+				d_innerMaterialGrains + firstWallIndex,
+				d_outerMaterialGrains + firstWallIndex,
+				d_verticesInContours,
+				d_verticesInHoles,
+				d_modelPositions,
+				d_modelRotations,
+				d_modelIds);
 		}
 	}
+	cudaDeviceSynchronize();
 	cudaMemcpy(*out_noModelsInWallsBfr, d_noModelsInWallsBfr, sizeof(int) * (noWalls + 1), cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_noHolesInWallsBfr, d_noHolesInWallsBfr, sizeof(int) * (noWalls + 1), cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_noVerticesInContoursBfr, d_noVerticesInContoursBfr, sizeof(int) * (noWalls + 1), cudaMemcpyDeviceToHost);
+	cudaDeviceSynchronize();
 
 	int noHoles = (*out_noHolesInWallsBfr)[noWalls];
 	*out_noVerticesInHolesBfr = (int*)malloc(sizeof(int)*(noHoles + 1));
@@ -283,6 +231,14 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 	cudaMemcpy(*out_verticesInContours, d_verticesInContours, sizeof(float2) * noContourVertices, cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_verticesInHoles, d_verticesInHoles, sizeof(float2) * noHolesVertices, cudaMemcpyDeviceToHost);
 
+	int noGeneratedModels = (*out_noModelsInWallsBfr)[noWalls];
+	*out_modelPositions = (float3*)malloc(sizeof(float3)*(noGeneratedModels));
+	*out_modelRotations = (float3*)malloc(sizeof(float3)*(noGeneratedModels));
+	*out_modelIds = (int*)malloc(sizeof(int)*(noGeneratedModels));
+
+	cudaMemcpy(*out_modelPositions, d_modelPositions, sizeof(float3) * noGeneratedModels, cudaMemcpyDeviceToHost);
+	cudaMemcpy(*out_modelRotations, d_modelRotations, sizeof(float3) * noGeneratedModels, cudaMemcpyDeviceToHost);
+	cudaMemcpy(*out_modelIds, d_modelIds, sizeof(int) * noGeneratedModels, cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_frontMaterials, d_frontMaterials, sizeof(int) * noWalls, cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_backMaterials, d_backMaterials, sizeof(int) * noWalls, cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_innerMaterials, d_innerMaterials, sizeof(int) * noWalls, cudaMemcpyDeviceToHost);
@@ -292,6 +248,18 @@ void generateWalls(int noWalls, wallsInfo info, int noTypes, int noWallsInTypesB
 	cudaMemcpy(*out_innerMaterialGrains, d_innerMaterialGrains, sizeof(float) * noWalls, cudaMemcpyDeviceToHost);
 	cudaMemcpy(*out_outerMaterialGrains, d_outerMaterialGrains, sizeof(float) * noWalls, cudaMemcpyDeviceToHost);
 
+	cudaFree(d_modelsOfPunchers);
+	cudaFree(d_noVerticesInPunchersBfr);
+	cudaFree(d_cultures);
+	cudaFree(d_assetsInWalls);
+	cudaFree(d_colliderVertices);
+	cudaFree(d_puncherVertices);
+	cudaFree(d_modelPositions);
+	cudaFree(d_modelRotations);
+	cudaFree(d_modelIds);
+	cudaFree(d_noAssetsInWallsBfr);
+	cudaFree(d_noArgumentsInWallsBfr);
+	cudaFree(d_noCollidersInModelsBfr);
 	cudaFree(d_noModelsInWallsBfr);
 	cudaFree(d_noVerticesInContoursBfr);
 	cudaFree(d_noVerticesInHolesBfr);

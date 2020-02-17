@@ -2,18 +2,6 @@
 #include <cuda_runtime.h>
 #include <string>
 
-enum BuildingLogicType
-{
-	COTTAGE_B,
-	AMAZING_B
-};
-
-enum WallType
-{
-	BLUE_W,
-	AMAZING_W
-};
-
 struct modelInfo
 {
 	float3 position;
@@ -28,7 +16,7 @@ struct buildingsInfo
 
 struct wallsInfo
 {
-	WallType* types;
+	int* types;
 	float3* positions;
 	float3* rotations;
 	float3* dimensions;

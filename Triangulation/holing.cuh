@@ -19,6 +19,15 @@ bool isPointInsideTriangle(float2 s, float2 a, float2 b, float2 c)
 
 	return true;
 }
+bool isPointBetweenRays(float2 s, float2 a, float2 b, float2 c)
+{
+	int as_x = s.x - a.x;
+	int as_y = s.y - a.y;
+	int cs_x = s.x - c.x;
+	int cs_y = s.y - c.y;
+
+	return (((c.x - a.x)*cs_y - (c.y - a.y)*cs_x > 0) != ((b.x - a.x)*as_y - (b.y - a.y)*as_x > 0));
+}
 
 void mergeHolesAndContoursCPU(
 	int noWalls,
@@ -42,6 +51,7 @@ void mergeHolesAndContoursCPU(
 		int noHoles = noHolesInWallsBfr[wall + 1] - noHolesInWallsBfr[wall];
 
 		std::list<float2> outList;
+		outList.clear();
 		for (int i = 0; i < noContourVertices; i++)
 		{
 			outList.push_back(verticesInContours[i + noVerticesInContoursBfr[wall]]);
@@ -127,6 +137,18 @@ void mergeHolesAndContoursCPU(
 						smallestAnglePointInsideTriangle = v;
 						cosSmallestAngle = cosv;
 					}
+					else if (cosv == cosSmallestAngle)
+					{
+						auto prev = smallestAnglePointInsideTriangle;
+						prev++;
+						auto next = v;
+						next++;
+						if (isPointBetweenRays(*visiblePointCandidate, *prev, *v, *next))
+						{
+							smallestAnglePointInsideTriangle = v;
+							cosSmallestAngle = cosv;
+						}
+					}
 				}
 				v++;
 			}
@@ -141,10 +163,11 @@ void mergeHolesAndContoursCPU(
 			outList.insert(smallestAnglePointInsideTriangle, holeBegin, holeJointVertex + 1);
 		}
 		int outIndex = noVerticesInContoursBfr[wall] + noVerticesInHolesBfr[noHolesInWallsBfr[wall]] + noHolesInWallsBfr[wall] * 2;
-		if (outIndex - noVerticesAssignedToBlocks > NO_VERTICES_FOR_BLOCK_TRIANGULATION)
+		int noVerticesToSave = noContourVertices + noVerticesInHolesBfr[noHolesInWallsBfr[wall+1]] - noVerticesInHolesBfr[noHolesInWallsBfr[wall]] + noHoles * 2;
+		if (outIndex + noVerticesToSave - noVerticesAssignedToBlocks > NO_VERTICES_FOR_BLOCK_TRIANGULATION)
 		{
-			noWallsInBlocksBfrList.push_back(wall - 1);
-			noVerticesAssignedToBlocks = out_verticesInWallsBfr[wall - 1];
+			noWallsInBlocksBfrList.push_back(wall);
+			noVerticesAssignedToBlocks = out_verticesInWallsBfr[wall];
 		}
 		for (float2 v : outList)
 		{

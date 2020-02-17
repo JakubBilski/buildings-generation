@@ -83,16 +83,22 @@
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="buildingsGeneration.cuh" />
+    <ClInclude Include="colliderEngine.cuh" />
+    <ClInclude Include="modulesGeneration.cuh" />
+    <ClInclude Include="cultures.cuh" />
     <ClInclude Include="defines.h" />
     <ClInclude Include="holing.cuh" />
     <ClInclude Include="jsonOperations.h" />
+    <ClInclude Include="modules.cuh" />
+    <ClInclude Include="moduleTools.cuh" />
     <ClInclude Include="normalsFinding.cuh" />
+    <ClInclude Include="placementEngine.cuh" />
     <ClInclude Include="triangulation.cuh" />
     <ClInclude Include="typesAndStructs.h" />
     <ClInclude Include="uvsFinding.cuh" />
+    <ClInclude Include="walls.cuh" />
     <ClInclude Include="wallsGeneration.cuh" />
-    <ClInclude Include="wallsMeshing.cuh" />
+    <ClInclude Include="meshing.cuh" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -41,37 +41,44 @@ void triangulatePolygonGPU(
 	int noVerticesInWallsBfr[],
 	int noWallsInBlocksBfr[],
 	float2 verticesInWalls[],
-	int memForTable,
 	int triangles[])
 {
 	//shared memory for all pointer structures needed in earcut algorithm
 	extern __shared__ int earcutTables[];
-	__shared__ int noEarsInBlock;
-	__shared__ int noBufferEarsInBlock;
-	float2* verticesValues = (float2*)earcutTables;
+	typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
 
 	int wallsInThisBlock_Debug = noWallsInBlocksBfr[blockIdx.x + 1] - noWallsInBlocksBfr[blockIdx.x];
-
-	//offseting, dividing into different pointer tables
-	int* nextReflexes = earcutTables + sizeof(float2) / sizeof(int) * memForTable;
-	int* typeOfVertices = nextReflexes + memForTable;	//reflex 0, non-reflex 1, ear 2
-	int* ears = typeOfVertices + memForTable;
-	int* bufferEars = ears + memForTable;
-	int* nextVertices = bufferEars + memForTable;
-	int* prevVertices = nextVertices + memForTable;
-	int* vertexToWall = prevVertices + memForTable;
-	int* rootReflexes = vertexToWall + memForTable;
-	int* addedTrianglesInWalls = rootReflexes + wallsInThisBlock_Debug;
-
-	//shared mem initialization
-	int index = threadIdx.x;
 	int thisBlockWallsStart = noWallsInBlocksBfr[blockIdx.x];
 	int thisBlockVerticesStart = noVerticesInWallsBfr[thisBlockWallsStart];
-	while (index < memForTable)
+	int thisBlockNoVertices = noVerticesInWallsBfr[noWallsInBlocksBfr[blockIdx.x + 1]] - thisBlockVerticesStart;
+
+	//if (threadIdx.x == 0)
+	//	printf("Starting with noVertices %d\n", thisBlockNoVertices);
+
+	//offseting, dividing into different pointer tables
+	float2* verticesValues = (float2*)earcutTables;
+	int* nextReflexes = earcutTables + sizeof(float2) / sizeof(int) * thisBlockNoVertices;
+	int* typeOfVertices = nextReflexes + thisBlockNoVertices;	//reflex 0, non-reflex 1, ear 2
+	int* ears = typeOfVertices + thisBlockNoVertices;
+	int* bufferEars = ears + thisBlockNoVertices;
+	int* nextVertices = bufferEars + thisBlockNoVertices;
+	int* prevVertices = nextVertices + thisBlockNoVertices;
+	int* vertexToWall = prevVertices + thisBlockNoVertices;
+	int* rootReflexes = vertexToWall + thisBlockNoVertices;
+	int* addedTrianglesInWalls = rootReflexes + wallsInThisBlock_Debug;
+	int* noEarsInBlock = addedTrianglesInWalls + wallsInThisBlock_Debug;
+	int* noBufferEarsInBlock = noEarsInBlock + 1;
+	BlockScan::TempStorage* temp_storage1 = (BlockScan::TempStorage*)(noBufferEarsInBlock + 1);
+	BlockScan::TempStorage* temp_storage2 = (BlockScan::TempStorage*)((int*)temp_storage1 + sizeof(BlockScan::TempStorage)/sizeof(int));
+
+	//return;
+	//shared mem initialization
+	int index = threadIdx.x;
+	while (index < thisBlockNoVertices)
 	{
 		verticesValues[index] = verticesInWalls[thisBlockVerticesStart + index];
 		nextVertices[index] = index + 1;
-		prevVertices[index + 1] = index;
+		prevVertices[index] = index - 1;
 		ears[index] = -2;	//TODO: this is unnecessary, because we have noEarsInBlock
 		bufferEars[index] = -2;	//TODO: this is unnecessary, because we have noEarsInBlock
 		nextReflexes[index] = -2;
@@ -97,16 +104,15 @@ void triangulatePolygonGPU(
 		}
 	}
 
+	//return;
 	__syncthreads();
 	//all the following runs only for the block's walls and vertices
 
 	//calculating number of vertices in block
-	int noVerticesInThisBlock = noVerticesInWallsBfr[noWallsInBlocksBfr[blockIdx.x + 1]] - thisBlockVerticesStart;
-	__syncthreads();
 
 	if (threadIdx.x == 0)
 	{
-		noEarsInBlock = 0;
+		*noEarsInBlock = 0;
 	}
 
 	__syncthreads();
@@ -114,13 +120,12 @@ void triangulatePolygonGPU(
 	//initializing reflex vertices
 	//warp-based would be probably the fastest, but it's hard to implement
 	index = threadIdx.x;
-	while (index < noVerticesInThisBlock)
+	while (index < thisBlockNoVertices)
 	{
 		if (!IsAngleBetweenSmallerThanPi(verticesValues[prevVertices[index]], verticesValues[index], verticesValues[nextVertices[index]]))
 		{
 			//adding reflex
 			nextReflexes[index] = atomicExch(&(rootReflexes[vertexToWall[index]]), index);
-			//__syncthreads();
 			typeOfVertices[index] = 0;
 		}
 		index += blockDim.x;
@@ -129,12 +134,10 @@ void triangulatePolygonGPU(
 
 	__syncthreads();
 
-
 	//gathering ears
 	index = threadIdx.x;
 	int foundEar = -1;
-	int earSaveOffset;
-	if (index < noVerticesInThisBlock)
+	if (index < thisBlockNoVertices)
 	{
 		//1. reflex cannot be an ear
 		//2. zero index is never an ear
@@ -152,30 +155,39 @@ void triangulatePolygonGPU(
 		{
 			typeOfVertices[index] = 2;
 			foundEar = index;
+			//printf("[%d, %d] znalazl ear\n", blockIdx.x, threadIdx.x);
 		}
 	}
+	int count = foundEar != -1 ? 1 : 0;
+	//if (threadIdx.x == 0)
+	//	printf("[%d] Yo we reached scan\n", blockIdx.x);
 	__syncthreads();
-	typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
-	__shared__ typename BlockScan::TempStorage temp_storage;
+	int earSaveOffset;
+	BlockScan(*temp_storage1).ExclusiveSum(count, earSaveOffset);
 	__syncthreads();
-	int totalEars;
-	BlockScan(temp_storage).ExclusiveSum(foundEar != -1 ? 1 : 0, earSaveOffset, totalEars);
-	__syncthreads();
+	//if (threadIdx.x == 255)
+	//	printf("[%d] Yo we past the scan with offset %d\n", blockIdx.x, earSaveOffset);
 	if (foundEar != -1)
 	{
 		ears[earSaveOffset] = foundEar;
-		atomicAdd((int*)&noEarsInBlock, 1);	//TODO: Change to prefixSum aggregate
+		atomicAdd(noEarsInBlock, 1);	//TODO: Change to aggregate
 	}
 	__syncthreads();
 	//main loop
-	while (noEarsInBlock > 0)
+	while (*noEarsInBlock > 0)
 	{
+		//if (threadIdx.x == 0)
+		//{
+		//	printf("[%d, %d] myk obrut, noEarsInBlock %d\n", blockIdx.x, threadIdx.x, *noEarsInBlock);
+		//}
 		int noEarsInThread = 0;
 		int newEars[3];
-		noBufferEarsInBlock = 0;
+		*noBufferEarsInBlock = 0;
 		index = threadIdx.x;
-		if (index < (noEarsInBlock+1)/2)
+		if (index < (*noEarsInBlock+1)/2)
 		{
+			//if (blockIdx.x == 0)
+			//	printf("Unfolding ear %d: %d\n", 2 * index, ears[2*index]);
 			//every thread handles two ears and unfolds only one, to avoid conflicts
 			int ear = ears[2 * index];
 			int globalWall = vertexToWall[ear] + thisBlockWallsStart;
@@ -185,7 +197,8 @@ void triangulatePolygonGPU(
 				triangles[triangleIndex] = prevVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 1] = ear + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
 				triangles[triangleIndex + 2] = nextVertices[ear] + thisBlockVerticesStart - noVerticesInWallsBfr[globalWall];
-				//printf("[%d] saving triangle %d %d %d in %d\n", threadIdx.x + blockDim.x * blockIdx.x, triangles[triangleIndex], triangles[triangleIndex + 1], triangles[triangleIndex + 2], triangleIndex/3);
+				//if(blockIdx.x == 0)
+				//	printf("[%d, %d] saving triangle %d %d %d in %d\n", blockIdx.x, threadIdx.x, triangles[triangleIndex], triangles[triangleIndex + 1], triangles[triangleIndex + 2], triangleIndex/3);
 			}
 
 			int next = nextVertices[ear];
@@ -220,10 +233,16 @@ void triangulatePolygonGPU(
 						verticesValues))
 				{
 					//will add prev to ears
+					//if (blockIdx.x == 0 && (prev == 26))
+					//	printf("\tAdding to ears %d\n", prev);
 					typeOfVertices[prev] = 2;
 					newEars[noEarsInThread] = prev;
 					noEarsInThread++;
 				}
+				//else if(blockIdx.x == 0 && (prev == 26))
+				//{
+				//	printf("\tRejected ear %d %d %d\n", prevVertices[prev], prev, nextVertices[prev]);
+				//}
 			}
 			if (typeOfVertices[next] == 1)
 			{
@@ -242,8 +261,10 @@ void triangulatePolygonGPU(
 					noEarsInThread++;
 				}
 			}
-			if (2 * index + 1 < noEarsInBlock)
+			if (2 * index + 1 < *noEarsInBlock)
 			{
+				//if (blockIdx.x == 0)
+				//	printf("Skipped ear %d: %d\n", 2 * index + 1, ears[2 * index + 1]);
 				int skippedEar = ears[2 * index + 1];
 				//will add skipped ear to ears if it's still an ear
 				if (!IsAnyReflexInsideTriangle(verticesValues[prevVertices[skippedEar]],
@@ -254,31 +275,37 @@ void triangulatePolygonGPU(
 					rootReflexes[vertexToWall[skippedEar]],
 					verticesValues))
 				{
+					//if (blockIdx.x == 0)
+					//	printf("Adding skipped ear %d: %d\n", 2 * index + 1, ears[2 * index + 1]);
 					newEars[noEarsInThread] = ears[2 * index + 1];
 					noEarsInThread++;
+				}
+				else
+				{
+					typeOfVertices[ears[2 * index + 1]] = 1;
 				}
 			}
 		}
 		//adding all gathered new ears
 		__syncthreads();
 		int earsInsertionIndex = 0;
-		typedef cub::BlockScan<int, NO_THREADS, cub::BLOCK_SCAN_RAKING_MEMOIZE> BlockScan;
-		__shared__ typename BlockScan::TempStorage temp_storage;
-		BlockScan(temp_storage).ExclusiveSum(noEarsInThread, earsInsertionIndex);
+		BlockScan(*temp_storage2).ExclusiveSum(noEarsInThread, earsInsertionIndex);
 		for (size_t e = 0; e < noEarsInThread; e++)
 		{
 			bufferEars[earsInsertionIndex + e] = newEars[e];
 		}
 		__syncthreads();
-		atomicAdd(&noBufferEarsInBlock, noEarsInThread); //TODO: Change to blockscan aggregate
+		atomicAdd(noBufferEarsInBlock, noEarsInThread); //TODO: Change to block aggregate?
 		__syncthreads();
 		int* swapBuffer = bufferEars;
 		bufferEars = ears;
 		ears = swapBuffer;
 		if (threadIdx.x == 0)
 		{
-			noEarsInBlock = noBufferEarsInBlock;
+			*noEarsInBlock = *noBufferEarsInBlock;
 		}
 		__syncthreads();
 	}
+	//if(threadIdx.x == 0)
+	//	printf("[%d, %d] spierdalam\n", blockIdx.x, threadIdx.x);
 }
