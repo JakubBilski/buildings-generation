@@ -8,7 +8,8 @@
 __device__
 inline int IsAngleBetweenSmallerThanPi(float2 v1, float2 v2, float2 v3)
 {
-	return (v1.x - v2.x)*(v3.y - v2.y) - (v1.y - v2.y)*(v3.x - v2.x) < 0;
+	float eps = 0.001f;
+	return (v1.x - v2.x)*(v3.y - v2.y) - (v1.y - v2.y)*(v3.x - v2.x) < -eps;
 }
 
 __device__
@@ -20,19 +21,30 @@ inline int IsAnyReflexInsideTriangle(float2 a, float2 b, float2 c, int* nextRefl
 		{
 			float x = verticesValues[reflexRoot].x;
 			float y = verticesValues[reflexRoot].y;
-			float as_x = x - a.x;
-			float as_y = y - a.y;
-			bool s_ab = (b.x - a.x)*as_y - (b.y - a.y)*as_x > 0;
-			if ((c.x - a.x)*as_y - (c.y - a.y)*as_x > 0 != s_ab)
+			float eps = 0.001f;
+			if ((abs(a.x - x) > eps || abs(a.y - y) > eps) && (abs(b.x - x) > eps || abs(b.y - y) > eps) && (abs(c.x - x) > eps || abs(c.y - y) > eps))
 			{
-				if ((c.x - b.x)*(y - b.y) - (c.y - b.y)*(x - b.x) > 0 == s_ab)
+				float as_x = x - a.x;
+				float as_y = y - a.y;
+				eps = 0.2f;
+				if (abs((b.x - a.x)*as_y - (b.y - a.y)*as_x) > eps && abs((c.x - a.x)*as_y - (c.y - a.y)*as_x) > eps && abs((c.x - b.x)*(y - b.y) - (c.y - b.y)*(x - b.x)) > eps)
 				{
-					return true;
+					bool s_ab = (b.x - a.x)*as_y - (b.y - a.y)*as_x > 0;
+					if ((c.x - a.x)*as_y - (c.y - a.y)*as_x > 0 != s_ab)
+					{
+						if ((c.x - b.x)*(y - b.y) - (c.y - b.y)*(x - b.x) > 0 == s_ab)
+						{
+							printf("%f,%f %f,%f %f,%f %f,%f true\n", a.x, a.y, b.x, b.y, c.x, c.y, x, y);
+							return true;
+						}
+					}
 				}
 			}
+			//printf("%f,%f %f,%f %f,%f %f,%f false\n", a.x, a.y, b.x, b.y, c.x, c.y, x, y);
 		}
 		reflexRoot = nextReflexes[reflexRoot];
 	}
+	//printf("[%d, %d] %f,%f %f,%f %f,%f -> %d\n", threadIdx.x, blockIdx.x, a.x, a.y, b.x, b.y, c.x, c.y, 1);
 	return false;
 }
 
@@ -74,6 +86,8 @@ void triangulatePolygonGPU(
 	//return;
 	//shared mem initialization
 	int index = threadIdx.x;
+	if (threadIdx.x == 0)
+		printf("thisBlockNoVertices %d\n", thisBlockNoVertices);
 	while (index < thisBlockNoVertices)
 	{
 		verticesValues[index] = verticesInWalls[thisBlockVerticesStart + index];
@@ -133,6 +147,26 @@ void triangulatePolygonGPU(
 	//NOTE: if reflex has prev == -2, it is pointed to by the root
 
 	__syncthreads();
+	//if (threadIdx.x == 0)
+	//{
+	//	printf("Reflexes:\n");
+	//	for (int wall = 0; wall < wallsInThisBlock_Debug; wall++)
+	//	{
+	//		printf("Wall %d\n", wall);
+	//		int iter = rootReflexes[wall];
+	//		while (iter != -2)
+	//		{
+	//			printf("%d ", iter);
+	//			iter = nextReflexes[iter];
+	//		}
+	//		printf("\n");
+	//	}
+	//}
+	//printf("Stoczterdziestka: %f,%f %f,%f %f,%f\n", verticesValues[prevVertices[140]].x, verticesValues[prevVertices[140]].y,
+	//	verticesValues[140].x, verticesValues[140].y,
+	//	verticesValues[nextVertices[140]].x, verticesValues[nextVertices[140]].y);
+	__syncthreads();
+
 
 	//gathering ears
 	index = threadIdx.x;
@@ -142,7 +176,7 @@ void triangulatePolygonGPU(
 		//1. reflex cannot be an ear
 		//2. zero index is never an ear
 		//3. triangle made by ear and its two neighbors doesn't have any vertices inside
-		if (typeOfVertices[index] == 1 &&
+		if ((typeOfVertices[index] == 1 || typeOfVertices[index] == 2) &&
 			index != noVerticesInWallsBfr[vertexToWall[index]] &&
 			!IsAnyReflexInsideTriangle(
 				verticesValues[prevVertices[index]],
@@ -155,7 +189,19 @@ void triangulatePolygonGPU(
 		{
 			typeOfVertices[index] = 2;
 			foundEar = index;
-			//printf("[%d, %d] znalazl ear\n", blockIdx.x, threadIdx.x);
+			printf("[%d, %d] znalazl ear %d\n", blockIdx.x, threadIdx.x, index);
+		}
+		else
+		{
+			printf("[%d, %d] %d %d %d\n", blockIdx.x, threadIdx.x, typeOfVertices[index], index != noVerticesInWallsBfr[vertexToWall[index]],
+				!IsAnyReflexInsideTriangle(
+					verticesValues[prevVertices[index]],
+					verticesValues[index],
+					verticesValues[nextVertices[index]],
+					nextReflexes,
+					typeOfVertices,
+					rootReflexes[vertexToWall[index]],
+					verticesValues));
 		}
 	}
 	int count = foundEar != -1 ? 1 : 0;
@@ -165,8 +211,8 @@ void triangulatePolygonGPU(
 	int earSaveOffset;
 	BlockScan(*temp_storage1).ExclusiveSum(count, earSaveOffset);
 	__syncthreads();
-	//if (threadIdx.x == 255)
-	//	printf("[%d] Yo we past the scan with offset %d\n", blockIdx.x, earSaveOffset);
+	if (threadIdx.x == 255)
+		printf("[%d] Yo we past the scan with offset %d\n", blockIdx.x, earSaveOffset);
 	if (foundEar != -1)
 	{
 		ears[earSaveOffset] = foundEar;

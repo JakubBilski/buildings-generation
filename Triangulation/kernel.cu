@@ -18,13 +18,13 @@
 int main()
 {
 	//input
-	const int noBuildings = 100;
+	const int noBuildings = 1;
 	//TODO: foreach stage
 	printf("Start\n");
 	float3* buildingPositions = (float3*)malloc(sizeof(float3)*noBuildings);
 	for (int i = 0; i < noBuildings; i++)
 	{
-		buildingPositions[i] = { 0, 0, (float)(i * 20) };
+		buildingPositions[i] = { (float)(i/20)*20, 0, (float)((i%20) * 20) };
 	}
 	const int noTypes = 1;
 	int types[noTypes]{ 0 };
@@ -61,7 +61,7 @@ int main()
 	for (int i = 1; i < noBuildings + 1; i++)
 	{
 		noArgumentsInBuildingsBfr[i] = noArgumentsInBuildingsBfr[i - 1] + 2;
-		argumentsInBuildings[2 * i - 2] = 2;
+		argumentsInBuildings[2 * i - 2] = 3;
 		argumentsInBuildings[2 * i - 1] = 40;
 	}
 	noAssetsInBuildingsBfr[0] = 0;
